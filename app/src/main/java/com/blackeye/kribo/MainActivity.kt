@@ -1,0 +1,41 @@
+package com.blackeye.kribo
+
+import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
+import com.blackeye.kribo.ui.KriboApp
+import com.blackeye.kribo.ui.theme.KriboTheme
+
+class MainActivity : AppCompatActivity() {
+
+    private val container: AppContainer
+        get() = (application as KriboApplication).container
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // No keep-on-screen condition and no artificial delay: the splash hands over immediately.
+        installSplashScreen()
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        setContent {
+            KriboTheme {
+                val billingState by container.billingManager.state.collectAsStateWithLifecycle()
+                KriboApp(
+                    container = container,
+                    billingState = billingState,
+                    onPurchase = { container.billingManager.launchPurchase(this) },
+                )
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-query entitlements and acknowledge purchases every time the app returns to foreground.
+        container.billingManager.refresh()
+    }
+}

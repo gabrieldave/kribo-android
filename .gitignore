@@ -1,0 +1,37 @@
+# Secrets & signing material — never commit
+*.jks
+*.keystore
+*.p12
+keystore.properties
+keystore.env
+local.properties
+.env
+.env.*
+.ci/
+secrets.env
+
+# Builds & artifacts
+dist/
+*.apk
+*.aab
+*.ap_
+*.dex
+build/
+.gradle/
+.kotlin/
+app/build/
+app/release/
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+*.hprof
+
+# IDE / OS
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs
+*.log

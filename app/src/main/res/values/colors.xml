@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="kribo_obsidian">#0D1117</color>
+    <color name="kribo_surface">#161B22</color>
+    <color name="kribo_cyan">#00D8FF</color>
+    <color name="kribo_white">#FFFFFF</color>
+    <color name="kribo_background">#F6F8FA</color>
+    <color name="ic_launcher_background">#0D1117</color>
+</resources>

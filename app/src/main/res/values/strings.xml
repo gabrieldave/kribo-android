@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kribo</string>
+    <string name="brand_tagline">Notes, scans and search. All on your device.</string>
+
+    <string name="home_recent_title">Recent notes</string>
+    <string name="home_recent_empty">Nothing here yet. Your notes will appear as soon as you write the first one.</string>
+    <string name="home_quick_note_title">Write a quick note</string>
+    <string name="home_quick_note_subtitle">Capture an idea in seconds</string>
+    <string name="home_scan_title">Scan</string>
+    <string name="home_scan_subtitle">Digitize a document with on-device OCR</string>
+    <string name="home_search_title">Search</string>
+    <string name="home_search_subtitle">Find any note instantly</string>
+    <string name="home_open_settings">Open settings</string>
+    <string name="home_note_options">Note options</string>
+    <string name="home_delete_title">Delete note?</string>
+    <string name="home_delete_message">This note will be permanently removed from this device.</string>
+
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_save">Save note</string>
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_open">Open</string>
+
+    <string name="note_title_new">New note</string>
+    <string name="note_title_edit">Edit note</string>
+    <string name="note_placeholder">Write your idea…</string>
+    <string name="note_untitled">Untitled</string>
+
+    <string name="search_title">Search</string>
+    <string name="search_placeholder">Search your notes…</string>
+    <string name="search_no_results">No notes match “%1$s”</string>
+    <string name="search_no_notes">Write your first note so you can search it here.</string>
+
+    <string name="scan_title">Scan</string>
+    <string name="scan_badge">Coming soon</string>
+    <string name="scan_headline">Offline OCR engine</string>
+    <string name="scan_body">The ScanOffline engine loads only when you scan. Nothing leaves your device.</string>
+    <string name="scan_cta">Scan document</string>
+    <string name="scan_engine_note">Lazy loading is wired and ready for ScanOffline.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_preferences">Preferences</string>
+    <string name="settings_language_title">Language</string>
+    <string name="settings_language_subtitle">Choose the app language</string>
+    <string name="language_system">Automatic</string>
+    <string name="language_spanish">Español</string>
+    <string name="language_english">English</string>
+
+    <string name="settings_section_integrations">Integrations</string>
+    <string name="settings_connections_title">Advanced connections</string>
+    <string name="settings_connections_subtitle">Sync and servers, collapsed by default</string>
+    <string name="settings_connection_drive">Google Drive sync</string>
+    <string name="settings_connection_wifi">Wi-Fi transfer</string>
+    <string name="settings_connection_mcp">MCP server</string>
+    <string name="settings_coming_soon">Coming soon</string>
+
+    <string name="settings_section_pro">Kribo Pro</string>
+    <string name="settings_pro_title">Kribo Pro</string>
+    <string name="settings_pro_subtitle">Remove limits and support development.</string>
+    <string name="settings_pro_price">Kribo Pro · %1$s</string>
+    <string name="settings_pro_unavailable">Price unavailable right now</string>
+    <string name="settings_pro_restore">Restore purchases</string>
+    <string name="settings_pro_active">Kribo Pro is active</string>
+
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_version">Version %1$s</string>
+    <string name="settings_about_body">Kribo keeps your notes private on your device. No account and no tracking.</string>
+
+    <string name="billing_store_unavailable">Store unavailable</string>
+
+    <string name="cd_back">Back</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_expand">Expand</string>
+    <string name="cd_collapse">Collapse</string>
+    <string name="cd_more">More options</string>
+</resources>
