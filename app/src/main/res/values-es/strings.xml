@@ -4,7 +4,7 @@
     <string name="brand_tagline">Notas, escaneos y búsqueda. Todo en tu dispositivo.</string>
 
     <string name="home_recent_title">Notas recientes</string>
-    <string name="home_recent_empty">Aún no hay nada aquí. Tus notas aparecerán en cuanto escribas la primera.</string>
+    <string name="home_recent_empty">Aún no hay notas. Escribe la primera o escanea un documento.</string>
     <string name="home_quick_note_title">Escribir nota rápida</string>
     <string name="home_quick_note_subtitle">Captura una idea en segundos</string>
     <string name="home_scan_title">Escanear</string>
@@ -75,4 +75,73 @@
     <string name="cd_expand">Expandir</string>
     <string name="cd_collapse">Contraer</string>
     <string name="cd_more">Más opciones</string>
+    <string name="home_search_placeholder">Buscar notas y OCR…</string>
+    <string name="home_filter_all">Todas</string>
+    <string name="home_action_write">Escribir</string>
+    <string name="home_action_scan">Escanear</string>
+    <string name="home_free_scans">Quedan %1$d de 5 escaneos OCR gratis</string>
+    <string name="badge_ocr">OCR</string>
+    <string name="cd_import">Importar notas</string>
+    <string name="cd_new_folder">Nueva carpeta</string>
+    <string name="cd_manage_folders">Gestionar carpetas</string>
+    <string name="cd_pin">Fijar nota</string>
+    <string name="folders_title">Carpetas</string>
+    <string name="folder_rename">Renombrar carpeta</string>
+    <string name="folder_delete">Eliminar carpeta</string>
+    <string name="folder_new">Nueva carpeta</string>
+    <string name="folder_rename_title">Renombrar carpeta</string>
+    <string name="folder_name_hint">Nombre de la carpeta</string>
+    <string name="action_accept">Guardar</string>
+
+    <string name="import_running_title">Importando</string>
+    <string name="import_running_body">Leyendo y convirtiendo tus notas…</string>
+    <string name="import_done_title">Importación completada</string>
+    <string name="import_summary">%1$d notas y %2$d adjuntos importados.</string>
+    <string name="import_error_title">No se pudo importar</string>
+    <string name="import_error_body">No se pudo importar este archivo. Usa .enex, .md o .zip.</string>
+
+    <string name="scan_progress_title">Ejecutando OCR sin conexión</string>
+    <string name="scan_progress_page">Página %1$d de %2$d</string>
+    <string name="scan_error_title">Escaneo fallido</string>
+    <string name="scan_error_body">El escáner o el motor OCR no pudieron terminar. Inténtalo de nuevo.</string>
+
+    <string name="paywall_title">Límite de OCR alcanzado</string>
+    <string name="paywall_body">Has usado tus %1$d escaneos OCR gratuitos. Kribo Pro elimina el límite y apoya el desarrollo.</string>
+
+    <string name="export_title">Exportar nota</string>
+    <string name="export_markdown">Markdown (.md)</string>
+    <string name="export_pdf">PDF</string>
+    <string name="export_error_title">No se pudo exportar</string>
+    <string name="export_error_body">No se pudo generar el archivo. Inténtalo de nuevo.</string>
+    <string name="cd_export">Exportar nota</string>
+
+    <string name="editor_empty">Añade tu primer bloque con la barra inferior.</string>
+    <string name="block_title_placeholder">Título</string>
+    <string name="block_subtitle_placeholder">Subtítulo</string>
+    <string name="block_paragraph_placeholder">Escribe…</string>
+    <string name="block_task_placeholder">Tarea</string>
+    <string name="block_toggle_placeholder">Título del desplegable</string>
+    <string name="block_toggle_content_placeholder">Contenido oculto</string>
+    <string name="block_quote_placeholder">Cita</string>
+    <string name="attachment_scan">Documento escaneado</string>
+    <string name="cd_delete_block">Eliminar bloque</string>
+    <string name="cd_block_title">Insertar título</string>
+    <string name="cd_block_subtitle">Insertar subtítulo</string>
+    <string name="cd_block_paragraph">Insertar párrafo</string>
+    <string name="cd_block_task">Insertar tarea</string>
+    <string name="cd_block_toggle">Insertar desplegable</string>
+    <string name="cd_block_quote">Insertar cita</string>
+
+    <string name="settings_section_data">Datos</string>
+    <string name="settings_import_title">Importar notas</string>
+    <string name="settings_import_subtitle">Evernote .enex, Notion/Obsidian .md o .zip</string>
+    <string name="settings_backup_title">Exportar respaldo completo</string>
+    <string name="settings_backup_subtitle">Todas las notas como .md estándar en un .zip</string>
+
+    <string name="backup_running_title">Exportando respaldo</string>
+    <string name="backup_progress">%1$d de %2$d notas</string>
+    <string name="backup_done_title">Respaldo listo</string>
+    <string name="backup_done_body">%1$d notas exportadas.</string>
+    <string name="backup_error_title">No se pudo respaldar</string>
+    <string name="backup_error_body">No se pudo escribir el respaldo en la ubicación elegida.</string>
 </resources>

@@ -32,7 +32,8 @@ Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CE
 - SplashScreen API nativa (`androidx.core:core-splashscreen`).
 - Transición `<= 350 ms` (`windowSplashScreenAnimationDuration = 250`).
 - Prohibido añadir `delay()`, `Thread.sleep()` o pantallas de carga artificiales al abrir.
-- El motor OCR de ScanOffline se carga de forma diferida solo al escanear (`ui/scan/ScanEngine.kt`).
+- El motor PP-OCRv5 (`ocr/OcrSubsystem.kt`) se carga de forma diferida solo al escanear: prohibido tocar ONNX, modelos o ML Kit en `Application.onCreate`/`MainActivity.onCreate`.
+- Presupuesto de arranque en frío: **< 250 ms** (objetivo 120-160 ms).
 
 ## 4. Idioma
 
@@ -44,7 +45,9 @@ Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CE
 
 ## 5. Datos
 
-- Room con `exportSchema = true`; los esquemas viven versionados en `app/schemas/`.
+- Room v2 (`FolderEntity`, `NoteEntity`, `AttachmentEntity`) con `exportSchema = true`; los esquemas viven versionados en `app/schemas/`.
+- Los bloques del editor se serializan con kotlinx.serialization en `blocksJson`; nunca romper la compatibilidad hacia atrás.
+- Toda migración lleva su test (`Migration1To2Test`).
 - Toda migración debe ser explícita y revisable. Prohibido `fallbackToDestructiveMigration`.
 - El repositorio (`NoteRepository`) es la única puerta de acceso a la base de datos.
 

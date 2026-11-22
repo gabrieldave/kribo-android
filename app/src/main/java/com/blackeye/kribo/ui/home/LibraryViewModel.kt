@@ -1,0 +1,348 @@
+package com.blackeye.kribo.ui.home
+
+import android.content.ContentResolver
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.blackeye.kribo.AppContainer
+import com.blackeye.kribo.data.DEFAULT_FOLDER_GENERAL
+import com.blackeye.kribo.data.FolderEntity
+import com.blackeye.kribo.data.NoteEntity
+import com.blackeye.kribo.data.blocks.AttachmentBlock
+import com.blackeye.kribo.data.blocks.NoteBlock
+import com.blackeye.kribo.data.previewText
+import com.blackeye.kribo.ocr.OcrQuotaStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
+
+data class NoteListItem(
+    val note: NoteEntity,
+    val snippet: String,
+    val matchedOcr: Boolean,
+)
+
+enum class ScanPhase { IDLE, SCANNING, COMPLETE, ERROR }
+
+data class ScanUiState(
+    val phase: ScanPhase = ScanPhase.IDLE,
+    val page: Int = 0,
+    val totalPages: Int = 0,
+    val noteId: Long? = null,
+)
+
+enum class TransferPhase { IDLE, RUNNING, DONE, ERROR }
+
+data class ImportUiState(
+    val phase: TransferPhase = TransferPhase.IDLE,
+    val notes: Int = 0,
+    val attachments: Int = 0,
+)
+
+data class BackupUiState(
+    val phase: TransferPhase = TransferPhase.IDLE,
+    val done: Int = 0,
+    val total: Int = 0,
+)
+
+/**
+ * Single library state shared by Home, Search and Settings. Holds the selected folder, the
+ * instant search query, scan progress and import/export progress.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class LibraryViewModel(private val container: AppContainer) : ViewModel() {
+
+    private val repository = container.noteRepository
+
+    private val selectedFolderId = MutableStateFlow<Long?>(null)
+    val activeFolderId: StateFlow<Long?> = selectedFolderId.asStateFlow()
+
+    private val query = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = query.asStateFlow()
+
+    val folders: StateFlow<List<FolderEntity>> = repository.observeFolders()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val notes: StateFlow<List<NoteListItem>> = combine(selectedFolderId, query) { folder, text ->
+        folder to text
+    }.flatMapLatest { (folder, text) ->
+        val source = if (text.isBlank()) {
+            repository.observeNotes(folder)
+        } else {
+            repository.searchNotes(text)
+        }
+        source.map { list -> list.map { note -> note.toListItem(text) } }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _scanState = MutableStateFlow(ScanUiState())
+    val scanState: StateFlow<ScanUiState> = _scanState.asStateFlow()
+
+    private val _paywallVisible = MutableStateFlow(false)
+    val paywallVisible: StateFlow<Boolean> = _paywallVisible.asStateFlow()
+
+    private val _importState = MutableStateFlow(ImportUiState())
+    val importState: StateFlow<ImportUiState> = _importState.asStateFlow()
+
+    private val _backupState = MutableStateFlow(BackupUiState())
+    val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
+
+    private val _freeScansLeft = MutableStateFlow(OcrQuotaStore.FREE_OCR_LIMIT)
+    val freeScansLeft: StateFlow<Int> = _freeScansLeft.asStateFlow()
+
+    init {
+        viewModelScope.launch(Dispatchers.Default) {
+            container.billingManager.state.collect {
+                _freeScansLeft.value = container.quotaStore.remaining(it.owned)
+            }
+        }
+    }
+
+    fun onQueryChange(value: String) {
+        query.value = value
+    }
+
+    fun clearQuery() {
+        query.value = ""
+    }
+
+    fun selectFolder(folderId: Long?) {
+        selectedFolderId.value = folderId
+    }
+
+    fun clearFolderSelection() {
+        selectedFolderId.value = null
+    }
+
+    fun createNote(onCreated: (Long) -> Unit) {
+        viewModelScope.launch {
+            val folderId = selectedFolderId.value ?: DEFAULT_FOLDER_GENERAL
+            val noteId = withContext(Dispatchers.IO) {
+                repository.createNote(
+                    folderId = folderId,
+                    blocks = listOf(
+                        com.blackeye.kribo.data.blocks.TitleBlock(),
+                        com.blackeye.kribo.data.blocks.ParagraphBlock(),
+                    ),
+                )
+            }
+            onCreated(noteId)
+        }
+    }
+
+    fun deleteNote(noteId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteNote(noteId)
+        }
+    }
+
+    fun togglePinned(note: NoteEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.setPinned(note.id, !note.isPinned)
+        }
+    }
+
+    fun createFolder(name: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.createFolder(name)
+        }
+    }
+
+    fun renameFolder(folderId: Long, name: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.renameFolder(folderId, name)
+        }
+    }
+
+    fun deleteFolder(folderId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val deleted = repository.deleteFolder(folderId)
+            if (deleted) {
+                selectedFolderId.update { current -> if (current == folderId) null else current }
+            }
+        }
+    }
+
+    fun isPro(): Boolean = container.billingManager.state.value.owned
+
+    fun proPrice(): String? = container.billingManager.state.value.formattedPrice
+
+    /** Quota gate. Returns false and opens the paywall when the free tier is exhausted. */
+    fun canStartScan(): Boolean {
+        if (isPro() || _freeScansLeft.value > 0) return true
+        _paywallVisible.value = true
+        return false
+    }
+
+    fun dismissPaywall() {
+        _paywallVisible.value = false
+    }
+
+    fun onScanLaunchFailed() {
+        _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
+    }
+
+    fun cancelScan() {
+        _scanState.value = ScanUiState()
+    }
+
+    /**
+     * Copies and optimizes every page, then runs PP-OCRv5 on Dispatchers.Default. The engine is
+     * only instantiated here — never during app start or Home composition.
+     */
+    fun processScan(uris: List<Uri>, contentResolver: ContentResolver) {
+        if (uris.isEmpty()) return
+        _scanState.value = ScanUiState(
+            phase = ScanPhase.SCANNING,
+            page = 0,
+            totalPages = uris.size,
+        )
+        viewModelScope.launch {
+            var noteId: Long? = null
+            var attachedPages = 0
+            try {
+                val folderId = selectedFolderId.value ?: DEFAULT_FOLDER_GENERAL
+                noteId = withContext(Dispatchers.IO) { repository.createNote(folderId) }
+                val blocks = mutableListOf<NoteBlock>()
+
+                uris.forEachIndexed { index, uri ->
+                    _scanState.update { it.copy(page = index + 1) }
+                    val file = container.attachmentStore.saveScanPage(
+                        contentResolver = contentResolver,
+                        noteId = noteId,
+                        uri = uri,
+                        pageIndex = index,
+                    ) ?: return@forEachIndexed
+
+                    val text = container.ocrSubsystem.recognize(file).orEmpty()
+                    val attachmentId = withContext(Dispatchers.IO) {
+                        repository.addAttachment(
+                            noteId = noteId,
+                            filePath = file.absolutePath,
+                            mimeType = "image/jpeg",
+                            extractedText = text,
+                        )
+                    }
+                    blocks += AttachmentBlock(
+                        attachmentId = attachmentId,
+                        fileName = file.name,
+                        mimeType = "image/jpeg",
+                        previewText = text.take(600),
+                    )
+                    attachedPages++
+                }
+
+                if (attachedPages > 0) {
+                    withContext(Dispatchers.IO) { repository.saveBlocks(noteId, blocks) }
+                    container.quotaStore.consume()
+                    _freeScansLeft.value = container.quotaStore.remaining(isPro())
+                    _scanState.value = ScanUiState(phase = ScanPhase.COMPLETE, noteId = noteId)
+                } else {
+                    withContext(Dispatchers.IO) { repository.deleteNote(noteId) }
+                    _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
+                }
+            } catch (throwable: Throwable) {
+                if (noteId != null && attachedPages == 0) {
+                    withContext(Dispatchers.IO) { repository.deleteNote(noteId) }
+                }
+                _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
+            }
+        }
+    }
+
+    fun acknowledgeScan() {
+        _scanState.value = ScanUiState()
+    }
+
+    fun importFile(displayName: String, input: InputStream) {
+        _importState.value = ImportUiState(phase = TransferPhase.RUNNING)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    input.use { stream ->
+                        container.importService.import(
+                            displayName = displayName,
+                            input = stream,
+                            defaultFolderId = selectedFolderId.value ?: DEFAULT_FOLDER_GENERAL,
+                        )
+                    }
+                }
+            }
+            result.onSuccess { summary ->
+                _importState.value = ImportUiState(
+                    phase = TransferPhase.DONE,
+                    notes = summary.notes,
+                    attachments = summary.attachments,
+                )
+            }.onFailure {
+                _importState.value = ImportUiState(phase = TransferPhase.ERROR)
+            }
+        }
+    }
+
+    fun acknowledgeImport() {
+        _importState.value = ImportUiState()
+    }
+
+    fun exportBackup(uri: Uri, contentResolver: ContentResolver) {
+        _backupState.value = BackupUiState(phase = TransferPhase.RUNNING)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openOutputStream(uri)?.use { output ->
+                        container.exportService.writeBackup(output) { done, total ->
+                            _backupState.value = BackupUiState(
+                                phase = TransferPhase.RUNNING,
+                                done = done,
+                                total = total,
+                            )
+                        }
+                    } ?: error("Could not open output stream")
+                }
+            }
+            result.onSuccess { total ->
+                _backupState.value = BackupUiState(
+                    phase = TransferPhase.DONE,
+                    done = total,
+                    total = total,
+                )
+            }.onFailure {
+                _backupState.value = BackupUiState(phase = TransferPhase.ERROR)
+            }
+        }
+    }
+
+    fun acknowledgeBackup() {
+        _backupState.value = BackupUiState()
+    }
+
+    private fun NoteEntity.toListItem(activeQuery: String): NoteListItem {
+        if (activeQuery.isBlank()) {
+            return NoteListItem(note = this, snippet = previewText, matchedOcr = false)
+        }
+        val inOcr = ocrTextIndex.contains(activeQuery, ignoreCase = true)
+        val source = when {
+            inOcr -> ocrTextIndex
+            plainTextIndex.contains(activeQuery, ignoreCase = true) -> plainTextIndex
+            else -> title
+        }
+        val index = source.indexOf(activeQuery, ignoreCase = true).coerceAtLeast(0)
+        val start = (index - 40).coerceAtLeast(0)
+        val end = (index + activeQuery.length + 90).coerceAtMost(source.length)
+        val snippet = source.substring(start, end)
+            .replace('\n', ' ')
+            .trim()
+            .let { if (start > 0) "…$it" else it }
+        return NoteListItem(note = this, snippet = snippet, matchedOcr = inOcr)
+    }
+}

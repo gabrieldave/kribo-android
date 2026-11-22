@@ -3,22 +3,24 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- White ribbon monogram, geometric K within the 66dp safe zone. -->
+    <path
+        android:pathData="M40,30 L40,78"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M46,54 L65,32"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M46,54 L65,78"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <!-- Electric cyan nib at the tip of the upper ribbon. -->
     <path
         android:fillColor="#00D8FF"
-        android:pathData="M54,28 A26,26 0 1,1 53.99,28 Z" />
-    <path
-        android:pathData="M48,42 L48,66"
-        android:strokeColor="#0D1117"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M51,54 L61,42"
-        android:strokeColor="#0D1117"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M51,54 L61,66"
-        android:strokeColor="#0D1117"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round" />
+        android:pathData="M62,36 L73,25 L78,38 L68,44 Z" />
 </vector>

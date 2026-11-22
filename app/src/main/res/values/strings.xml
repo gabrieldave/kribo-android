@@ -4,7 +4,7 @@
     <string name="brand_tagline">Notes, scans and search. All on your device.</string>
 
     <string name="home_recent_title">Recent notes</string>
-    <string name="home_recent_empty">Nothing here yet. Your notes will appear as soon as you write the first one.</string>
+    <string name="home_recent_empty">No notes yet. Write the first one or scan a document.</string>
     <string name="home_quick_note_title">Write a quick note</string>
     <string name="home_quick_note_subtitle">Capture an idea in seconds</string>
     <string name="home_scan_title">Scan</string>
@@ -75,4 +75,73 @@
     <string name="cd_expand">Expand</string>
     <string name="cd_collapse">Collapse</string>
     <string name="cd_more">More options</string>
+    <string name="home_search_placeholder">Search notes and OCR…</string>
+    <string name="home_filter_all">All</string>
+    <string name="home_action_write">Write</string>
+    <string name="home_action_scan">Scan</string>
+    <string name="home_free_scans">%1$d of 5 free OCR scans left</string>
+    <string name="badge_ocr">OCR</string>
+    <string name="cd_import">Import notes</string>
+    <string name="cd_new_folder">New folder</string>
+    <string name="cd_manage_folders">Manage folders</string>
+    <string name="cd_pin">Pin note</string>
+    <string name="folders_title">Folders</string>
+    <string name="folder_rename">Rename folder</string>
+    <string name="folder_delete">Delete folder</string>
+    <string name="folder_new">New folder</string>
+    <string name="folder_rename_title">Rename folder</string>
+    <string name="folder_name_hint">Folder name</string>
+    <string name="action_accept">Save</string>
+
+    <string name="import_running_title">Importing</string>
+    <string name="import_running_body">Reading and converting your notes…</string>
+    <string name="import_done_title">Import complete</string>
+    <string name="import_summary">%1$d notes and %2$d attachments imported.</string>
+    <string name="import_error_title">Import failed</string>
+    <string name="import_error_body">This file could not be imported. Use .enex, .md or .zip.</string>
+
+    <string name="scan_progress_title">Running offline OCR</string>
+    <string name="scan_progress_page">Page %1$d of %2$d</string>
+    <string name="scan_error_title">Scan failed</string>
+    <string name="scan_error_body">The document scanner or OCR engine could not finish. Try again.</string>
+
+    <string name="paywall_title">OCR limit reached</string>
+    <string name="paywall_body">You have used all %1$d free OCR scans. Kribo Pro removes the limit and supports development.</string>
+
+    <string name="export_title">Export note</string>
+    <string name="export_markdown">Markdown (.md)</string>
+    <string name="export_pdf">PDF</string>
+    <string name="export_error_title">Export failed</string>
+    <string name="export_error_body">The file could not be generated. Try again.</string>
+    <string name="cd_export">Export note</string>
+
+    <string name="editor_empty">Add your first block with the toolbar below.</string>
+    <string name="block_title_placeholder">Title</string>
+    <string name="block_subtitle_placeholder">Subtitle</string>
+    <string name="block_paragraph_placeholder">Write…</string>
+    <string name="block_task_placeholder">Task</string>
+    <string name="block_toggle_placeholder">Toggle title</string>
+    <string name="block_toggle_content_placeholder">Hidden content</string>
+    <string name="block_quote_placeholder">Quote</string>
+    <string name="attachment_scan">Scanned document</string>
+    <string name="cd_delete_block">Delete block</string>
+    <string name="cd_block_title">Insert title</string>
+    <string name="cd_block_subtitle">Insert subtitle</string>
+    <string name="cd_block_paragraph">Insert paragraph</string>
+    <string name="cd_block_task">Insert task</string>
+    <string name="cd_block_toggle">Insert toggle</string>
+    <string name="cd_block_quote">Insert quote</string>
+
+    <string name="settings_section_data">Data</string>
+    <string name="settings_import_title">Import notes</string>
+    <string name="settings_import_subtitle">Evernote .enex, Notion/Obsidian .md or .zip</string>
+    <string name="settings_backup_title">Export full backup</string>
+    <string name="settings_backup_subtitle">All notes as standard .md files in a .zip</string>
+
+    <string name="backup_running_title">Exporting backup</string>
+    <string name="backup_progress">%1$d of %2$d notes</string>
+    <string name="backup_done_title">Backup ready</string>
+    <string name="backup_done_body">%1$d notes exported.</string>
+    <string name="backup_error_title">Backup failed</string>
+    <string name="backup_error_body">The backup could not be written to the selected location.</string>
 </resources>

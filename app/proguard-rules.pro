@@ -24,5 +24,29 @@
 -keep class com.android.billingclient.** { *; }
 -dontwarn com.android.billingclient.**
 
+# Kotlin serialization: block JSON models and generated serializers.
+-keepattributes *Annotation*, InnerClasses, Signature, Exceptions, EnclosingMethod
+-keep class com.blackeye.kribo.data.blocks.** { *; }
+-keepclassmembers class **$$serializer { *; }
+-keepclasseswithmembers class ** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keepclassmembers class com.blackeye.kribo.data.blocks.** {
+    *** Companion;
+}
+
+# ONNX Runtime + PP-OCRv5 native bridge.
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# ML Kit Document Scanner (unbundled, loaded through Play services).
+-keep class com.google.mlkit.vision.documentscanner.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_document_scanner.** { *; }
+-dontwarn com.google.mlkit.**
+-dontwarn com.google.android.gms.internal.mlkit_vision_document_scanner.**
+
 # Keep the local signature allow-list even if reflection is used by CI tooling.
 -keep class com.blackeye.kribo.security.AppSignatureVerifier { *; }

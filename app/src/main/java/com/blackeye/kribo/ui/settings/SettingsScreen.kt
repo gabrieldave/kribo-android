@@ -1,5 +1,7 @@
 package com.blackeye.kribo.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -18,11 +20,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
@@ -32,6 +36,7 @@ import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -46,26 +51,50 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blackeye.kribo.BuildConfig
 import com.blackeye.kribo.R
 import com.blackeye.kribo.billing.BillingUiState
+import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.StatusPill
+import com.blackeye.kribo.ui.home.LibraryViewModel
+import com.blackeye.kribo.ui.home.TransferPhase
 
 @Composable
 fun SettingsScreen(
     billingState: BillingUiState,
+    library: LibraryViewModel,
     onBack: () -> Unit,
     onPurchase: () -> Unit,
-    onRestore: () -> Unit,
+    onRestorePurchases: () -> Unit,
 ) {
+    val context = LocalContext.current
     var connectionsExpanded by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     val selectedLanguage = AppLanguage.current()
+    val importState by library.importState.collectAsStateWithLifecycle()
+    val backupState by library.backupState.collectAsStateWithLifecycle()
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            val name = context.displayNameFor(uri)
+            val stream = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
+            if (stream != null) library.importFile(name, stream)
+        }
+    }
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        if (uri != null) library.exportBackup(uri, context.contentResolver)
+    }
 
     AppScreen(
         title = stringResource(R.string.settings_title),
@@ -104,11 +133,30 @@ fun SettingsScreen(
             }
         }
 
+        SectionLabel(stringResource(R.string.settings_section_data))
+        SettingsCard {
+            SettingsActionRow(
+                icon = Icons.Rounded.FileOpen,
+                title = stringResource(R.string.settings_import_title),
+                subtitle = stringResource(R.string.settings_import_subtitle),
+                onClick = { importLauncher.launch(arrayOf("*/*")) },
+            )
+            SettingsDivider()
+            SettingsActionRow(
+                icon = Icons.Rounded.Archive,
+                title = stringResource(R.string.settings_backup_title),
+                subtitle = stringResource(R.string.settings_backup_subtitle),
+                onClick = {
+                    backupLauncher.launch("kribo-backup-${System.currentTimeMillis()}.zip")
+                },
+            )
+        }
+
         SectionLabel(stringResource(R.string.settings_section_pro))
         ProCard(
             billingState = billingState,
             onPurchase = onPurchase,
-            onRestore = onRestore,
+            onRestorePurchases = onRestorePurchases,
         )
 
         SectionLabel(stringResource(R.string.settings_section_integrations))
@@ -221,6 +269,103 @@ fun SettingsScreen(
             )
         }
     }
+
+    when (importState.phase) {
+        TransferPhase.RUNNING -> AppModal(
+            onDismissRequest = {},
+            title = stringResource(R.string.import_running_title),
+        ) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.import_running_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        TransferPhase.DONE -> AppModal(
+            onDismissRequest = library::acknowledgeImport,
+            title = stringResource(R.string.import_done_title),
+            dismissLabel = stringResource(R.string.action_close),
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.import_summary,
+                    importState.notes,
+                    importState.attachments,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        TransferPhase.ERROR -> AppModal(
+            onDismissRequest = library::acknowledgeImport,
+            title = stringResource(R.string.import_error_title),
+            dismissLabel = stringResource(R.string.action_close),
+        ) {
+            Text(
+                text = stringResource(R.string.import_error_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        TransferPhase.IDLE -> Unit
+    }
+
+    when (backupState.phase) {
+        TransferPhase.RUNNING -> AppModal(
+            onDismissRequest = {},
+            title = stringResource(R.string.backup_running_title),
+        ) {
+            if (backupState.total > 0) {
+                LinearProgressIndicator(
+                    progress = { backupState.done.toFloat() / backupState.total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(
+                    R.string.backup_progress,
+                    backupState.done,
+                    backupState.total,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        TransferPhase.DONE -> AppModal(
+            onDismissRequest = library::acknowledgeBackup,
+            title = stringResource(R.string.backup_done_title),
+            dismissLabel = stringResource(R.string.action_close),
+        ) {
+            Text(
+                text = stringResource(R.string.backup_done_body, backupState.total),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        TransferPhase.ERROR -> AppModal(
+            onDismissRequest = library::acknowledgeBackup,
+            title = stringResource(R.string.backup_error_title),
+            dismissLabel = stringResource(R.string.action_close),
+        ) {
+            Text(
+                text = stringResource(R.string.backup_error_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        TransferPhase.IDLE -> Unit
+    }
 }
 
 @Composable
@@ -274,6 +419,39 @@ private fun IconTile(icon: ImageVector) {
 }
 
 @Composable
+private fun SettingsActionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconTile(icon)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun LanguageRow(
     language: AppLanguage,
     selected: Boolean,
@@ -312,7 +490,7 @@ private fun AppLanguage.label(): String = stringResource(
 private fun ProCard(
     billingState: BillingUiState,
     onPurchase: () -> Unit,
-    onRestore: () -> Unit,
+    onRestorePurchases: () -> Unit,
 ) {
     SettingsCard {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -372,7 +550,7 @@ private fun ProCard(
                     Text(label)
                 }
                 TextButton(
-                    onClick = onRestore,
+                    onClick = onRestorePurchases,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),

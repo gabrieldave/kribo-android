@@ -3,9 +3,9 @@
 Notas rápidas, escaneo OCR local y búsqueda. Privado por diseño, sin cuentas y sin rastreo.
 
 - **Paquete:** `com.blackeye.kribo`
-- **Stack:** Kotlin · Jetpack Compose · Material 3 · Room · SplashScreen API
+- **Stack:** Kotlin · Jetpack Compose · Material 3 · Room v2 · SplashScreen API · ML Kit Document Scanner + ONNX Runtime PP-OCRv5
 - **SDK:** compileSdk 36 · targetSdk 36 · minSdk 26
-- **Versión:** 1.0.0 (versionCode 1)
+- **Versión:** 1.0.1 (versionCode 2)
 - **Billing:** Google Play Billing `billing-ktx` 8.3.0
 
 ## Requisitos
@@ -52,8 +52,10 @@ Ningún `.jks`, contraseña o `local.properties` se versiona.
 ```
 app/src/main/java/com/blackeye/kribo/
 ├── billing/        BillingManager (formattedPrice, acknowledge en onResume)
-├── data/           Room: Note, NoteDao, KriboDatabase, NoteRepository
-├── security/       AppSignatureVerifier (release-only)
+├── data/           Room v2: Folder, Note, Attachment, bloque JSON, migración 1→2
+├── importexport/   ENEX / Markdown / ZIP import, Markdown / PDF / backup export
+├── ocr/            PP-OCRv5 lazy (ONNX), cuota cifrada, AttachmentStore
+├── security/       AppSignatureVerifier (release-only) + SecurePrefsStore
 ├── ui/
 │   ├── components/ AppScreen, AppModal (contenedores obligatorios)
 │   ├── home/ note/ search/ scan/ settings/ theme/

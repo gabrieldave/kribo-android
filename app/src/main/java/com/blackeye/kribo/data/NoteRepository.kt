@@ -1,28 +1,176 @@
 package com.blackeye.kribo.data
 
+import com.blackeye.kribo.data.blocks.BlockCodec
+import com.blackeye.kribo.data.blocks.NoteBlock
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 
-class NoteRepository(private val dao: NoteDao) {
+class NoteRepository(
+    private val database: KriboDatabase,
+    private val attachmentsRoot: File,
+) {
+    private val noteDao = database.noteDao()
+    private val folderDao = database.folderDao()
+    private val attachmentDao = database.attachmentDao()
 
-    fun observeNotes(): Flow<List<Note>> = dao.observeAll()
+    fun observeNotes(): Flow<List<NoteEntity>> = noteDao.observeAll()
 
-    suspend fun getNote(id: Long): Note? = dao.getById(id)
+    fun observeNotes(folderId: Long?): Flow<List<NoteEntity>> =
+        if (folderId == null) noteDao.observeAll() else noteDao.observeByFolder(folderId)
 
-    suspend fun insertNote(content: String): Long {
+    fun searchNotes(query: String): Flow<List<NoteEntity>> = noteDao.search(query.trim())
+
+    fun observeFolders(): Flow<List<FolderEntity>> = folderDao.observeAll()
+
+    suspend fun getNote(id: Long): NoteEntity? = noteDao.getById(id)
+
+    suspend fun getBlocks(noteId: Long): List<NoteBlock> =
+        BlockCodec.decode(noteDao.getById(noteId)?.blocksJson)
+
+    suspend fun getAttachments(noteId: Long): List<AttachmentEntity> =
+        attachmentDao.getForNote(noteId)
+
+    suspend fun createNote(
+        folderId: Long?,
+        blocks: List<NoteBlock> = emptyList(),
+        title: String = BlockCodec.derivedTitle(blocks),
+    ): Long {
         val now = System.currentTimeMillis()
-        return dao.insert(Note(content = content, createdAt = now, updatedAt = now))
+        return noteDao.insert(
+            NoteEntity(
+                folderId = folderId,
+                title = title.take(120),
+                blocksJson = BlockCodec.encode(blocks),
+                plainTextIndex = BlockCodec.plainText(blocks),
+                ocrTextIndex = "",
+                isPinned = false,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
     }
 
-    suspend fun updateNote(id: Long, content: String, createdAt: Long) {
-        dao.update(
-            Note(
-                id = id,
-                content = content,
-                createdAt = createdAt,
+    suspend fun saveBlocks(noteId: Long, blocks: List<NoteBlock>) {
+        val existing = noteDao.getById(noteId) ?: return
+        val plainText = BlockCodec.plainText(blocks)
+        val derivedTitle = BlockCodec.derivedTitle(blocks)
+        val hasExplicitTitle = blocks.any { it is com.blackeye.kribo.data.blocks.TitleBlock && it.text.isNotBlank() }
+        val ocrText = attachmentDao.getForNote(noteId)
+            .mapNotNull { it.extractedText.takeIf(String::isNotBlank) }
+            .joinToString(separator = "\n")
+        noteDao.update(
+            existing.copy(
+                title = if (hasExplicitTitle) {
+                    derivedTitle
+                } else {
+                    existing.title.ifBlank { derivedTitle }
+                },
+                blocksJson = BlockCodec.encode(blocks),
+                plainTextIndex = plainText,
+                ocrTextIndex = ocrText,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
     }
 
-    suspend fun deleteNote(id: Long) = dao.deleteById(id)
+    suspend fun addAttachment(
+        noteId: Long,
+        filePath: String,
+        mimeType: String,
+        extractedText: String,
+    ): Long {
+        val id = attachmentDao.insert(
+            AttachmentEntity(
+                noteId = noteId,
+                filePath = filePath,
+                mimeType = mimeType,
+                extractedText = extractedText,
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        refreshOcrIndex(noteId)
+        return id
+    }
+
+    suspend fun refreshOcrIndex(noteId: Long) {
+        val existing = noteDao.getById(noteId) ?: return
+        val ocrText = attachmentDao.getForNote(noteId)
+            .mapNotNull { it.extractedText.takeIf(String::isNotBlank) }
+            .joinToString(separator = "\n")
+        noteDao.update(
+            existing.copy(
+                ocrTextIndex = ocrText,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    suspend fun deleteNote(noteId: Long) {
+        attachmentDao.deleteForNote(noteId)
+        noteDao.deleteById(noteId)
+        File(attachmentsRoot, noteId.toString()).deleteRecursively()
+    }
+
+    suspend fun setPinned(noteId: Long, pinned: Boolean) {
+        noteDao.setPinned(noteId, pinned, System.currentTimeMillis())
+    }
+
+    suspend fun moveToFolder(noteId: Long, folderId: Long?) {
+        noteDao.moveToFolder(noteId, folderId, System.currentTimeMillis())
+    }
+
+    suspend fun noteCount(): Int = noteDao.count()
+
+    suspend fun getAllNotes(): List<NoteEntity> = noteDao.getAllNow()
+
+    suspend fun getAllFolders(): List<FolderEntity> = folderDao.getAll()
+
+    suspend fun createFolder(
+        name: String,
+        iconKey: String = "folder",
+        colorHex: String = "#00D8FF",
+    ): Long? {
+        val clean = name.trim().take(48)
+        if (clean.isEmpty()) return null
+        if (folderDao.findByName(clean) != null) return null
+        return runCatching {
+            folderDao.insert(
+                FolderEntity(
+                    name = clean,
+                    iconKey = iconKey,
+                    colorHex = colorHex,
+                    sortOrder = folderDao.nextSortOrder(),
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }.getOrNull()
+    }
+
+    suspend fun renameFolder(folderId: Long, newName: String): Boolean {
+        val clean = newName.trim().take(48)
+        if (clean.isEmpty()) return false
+        val folder = folderDao.getById(folderId) ?: return false
+        val duplicate = folderDao.findByName(clean)
+        if (duplicate != null && duplicate.id != folderId) return false
+        return runCatching {
+            folderDao.update(folder.copy(name = clean))
+            true
+        }.getOrDefault(false)
+    }
+
+    /** General (id 1) is protected. Notes of a deleted folder move back to General. */
+    suspend fun deleteFolder(folderId: Long): Boolean {
+        if (folderId == DEFAULT_FOLDER_GENERAL) return false
+        folderDao.getById(folderId) ?: return false
+        folderDao.reassignNotes(folderId, DEFAULT_FOLDER_GENERAL)
+        folderDao.deleteById(folderId)
+        return true
+    }
+
+    suspend fun findOrCreateFolder(name: String): Long {
+        val clean = name.trim().take(48).ifBlank { "Importadas" }
+        folderDao.findByName(clean)?.let { return it.id }
+        createFolder(clean)?.let { return it }
+        return folderDao.findByName(clean)?.id ?: DEFAULT_FOLDER_GENERAL
+    }
 }

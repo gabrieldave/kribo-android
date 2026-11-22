@@ -17,6 +17,5 @@ class KriboApplication : Application() {
         }
 
         container = AppContainer(this)
-        container.billingManager.start()
     }
 }

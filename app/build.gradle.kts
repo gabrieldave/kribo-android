@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -45,11 +46,18 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables {
             useSupportLibrary = true
+        }
+
+        ndk {
+            // ONNX Runtime is shipped for the two production ABIs only.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -109,7 +117,8 @@ android {
 
     testOptions {
         unitTests {
-            isIncludeAndroidResources = false
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
         }
     }
 }
@@ -148,10 +157,20 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.billing.ktx)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.onnxruntime.android)
+    implementation(libs.mlkit.document.scanner)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 if (!hasReleaseSigning) {

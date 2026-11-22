@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
 private val DarkColors = darkColorScheme(
     primary = KriboElectricCyan,
@@ -13,6 +14,8 @@ private val DarkColors = darkColorScheme(
     onPrimaryContainer = KriboWhite,
     secondary = KriboCyanSoft,
     onSecondary = KriboOnCyan,
+    secondaryContainer = Color(0xFF0F2A33),
+    onSecondaryContainer = KriboElectricCyan,
     background = KriboObsidian,
     onBackground = KriboWhite,
     surface = KriboSurface,
@@ -32,6 +35,8 @@ private val LightColors = lightColorScheme(
     onPrimaryContainer = KriboLightText,
     secondary = KriboCyanDeep,
     onSecondary = KriboWhite,
+    secondaryContainer = KriboPrimaryContainerLight,
+    onSecondaryContainer = KriboCyanDeep,
     background = KriboLightBackground,
     onBackground = KriboLightText,
     surface = KriboLightSurface,

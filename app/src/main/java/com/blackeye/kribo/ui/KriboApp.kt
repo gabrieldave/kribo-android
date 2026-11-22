@@ -12,10 +12,8 @@ import androidx.navigation.navArgument
 import com.blackeye.kribo.AppContainer
 import com.blackeye.kribo.billing.BillingUiState
 import com.blackeye.kribo.ui.home.HomeScreen
-import com.blackeye.kribo.ui.home.NotesViewModel
+import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.note.NoteEditorScreen
-import com.blackeye.kribo.ui.scan.ScanScreen
-import com.blackeye.kribo.ui.search.SearchScreen
 import com.blackeye.kribo.ui.settings.SettingsScreen
 
 @Composable
@@ -25,6 +23,11 @@ fun KriboApp(
     onPurchase: () -> Unit,
 ) {
     val navController = rememberNavController()
+    val library: LibraryViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer { LibraryViewModel(container) }
+        },
+    )
 
     NavHost(
         navController = navController,
@@ -32,21 +35,11 @@ fun KriboApp(
     ) {
         composable(Routes.HOME) {
             HomeScreen(
-                viewModel = notesViewModel(container),
-                onQuickNote = { navController.navigate(Routes.NOTE_NEW) },
-                onScan = { navController.navigate(Routes.SCAN) },
-                onSearch = { navController.navigate(Routes.SEARCH) },
-                onSettings = { navController.navigate(Routes.SETTINGS) },
+                viewModel = library,
+                billingState = billingState,
                 onOpenNote = { id -> navController.navigate(Routes.noteEdit(id)) },
-            )
-        }
-
-        composable(Routes.NOTE_NEW) {
-            NoteEditorScreen(
-                noteId = null,
-                repository = container.noteRepository,
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() },
+                onSettings = { navController.navigate(Routes.SETTINGS) },
+                onPurchase = onPurchase,
             )
         }
 
@@ -57,40 +50,23 @@ fun KriboApp(
             ),
         ) { backStackEntry ->
             val noteId = backStackEntry.arguments?.getLong(Routes.NOTE_ID_ARG) ?: 0L
-            NoteEditorScreen(
-                noteId = noteId.takeIf { it > 0L },
-                repository = container.noteRepository,
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() },
-            )
-        }
-
-        composable(Routes.SEARCH) {
-            SearchScreen(
-                viewModel = notesViewModel(container),
-                onBack = { navController.popBackStack() },
-                onOpenNote = { id -> navController.navigate(Routes.noteEdit(id)) },
-            )
-        }
-
-        composable(Routes.SCAN) {
-            ScanScreen(onBack = { navController.popBackStack() })
+            if (noteId > 0L) {
+                NoteEditorScreen(
+                    noteId = noteId,
+                    container = container,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 billingState = billingState,
+                library = library,
                 onBack = { navController.popBackStack() },
                 onPurchase = onPurchase,
-                onRestore = container.billingManager::refresh,
+                onRestorePurchases = container.billingManager::refresh,
             )
         }
     }
 }
-
-@Composable
-private fun notesViewModel(container: AppContainer): NotesViewModel = viewModel(
-    factory = viewModelFactory {
-        initializer { NotesViewModel(container.noteRepository) }
-    },
-)

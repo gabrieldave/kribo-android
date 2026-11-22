@@ -1,6 +1,7 @@
 package com.blackeye.kribo
 
 import android.os.Bundle
+import android.view.Choreographer
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -35,7 +36,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-query entitlements and acknowledge purchases every time the app returns to foreground.
-        container.billingManager.refresh()
+        // Defer Billing until after the first frame so cold start stays under 250 ms.
+        Choreographer.getInstance().postFrameCallback {
+            container.billingManager.refresh()
+        }
     }
 }
