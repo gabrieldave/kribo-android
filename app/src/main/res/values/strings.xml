@@ -77,8 +77,6 @@
     <string name="cd_more">More options</string>
     <string name="home_search_placeholder">Search notes and OCR…</string>
     <string name="home_filter_all">All</string>
-    <string name="home_action_write">Write</string>
-    <string name="home_action_scan">Scan</string>
     <string name="home_free_scans">%1$d of 5 free OCR scans left</string>
     <string name="badge_ocr">OCR</string>
     <string name="cd_import">Import notes</string>
@@ -144,4 +142,17 @@
     <string name="backup_done_body">%1$d notes exported.</string>
     <string name="backup_error_title">Backup failed</string>
     <string name="backup_error_body">The backup could not be written to the selected location.</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_title">Theme</string>
+    <string name="settings_theme_subtitle">Choose how Kribo looks</string>
+    <string name="theme_obsidian">Obsidian</string>
+    <string name="theme_warm_paper">Warm Paper</string>
+    <string name="theme_amoled">AMOLED Black</string>
+    <string name="theme_pure_light">Pure Light</string>
+    <string name="home_quick_capture_placeholder">Write something fast…</string>
+    <string name="cd_toggle_list">Show compact list</string>
+    <string name="cd_toggle_bento">Show bento grid</string>
+    <string name="cd_open_editor">Open full editor</string>
+    <string name="cd_save_quick">Save quick note</string>
+    <string name="cd_scan_ocr">Scan with OCR</string>
 </resources>

@@ -77,8 +77,6 @@
     <string name="cd_more">Más opciones</string>
     <string name="home_search_placeholder">Buscar notas y OCR…</string>
     <string name="home_filter_all">Todas</string>
-    <string name="home_action_write">Escribir</string>
-    <string name="home_action_scan">Escanear</string>
     <string name="home_free_scans">Quedan %1$d de 5 escaneos OCR gratis</string>
     <string name="badge_ocr">OCR</string>
     <string name="cd_import">Importar notas</string>
@@ -144,4 +142,17 @@
     <string name="backup_done_body">%1$d notas exportadas.</string>
     <string name="backup_error_title">No se pudo respaldar</string>
     <string name="backup_error_body">No se pudo escribir el respaldo en la ubicación elegida.</string>
+    <string name="settings_section_appearance">Apariencia</string>
+    <string name="settings_theme_title">Tema</string>
+    <string name="settings_theme_subtitle">Elige el aspecto de Kribo</string>
+    <string name="theme_obsidian">Obsidiana</string>
+    <string name="theme_warm_paper">Papel Cálido</string>
+    <string name="theme_amoled">AMOLED Negro</string>
+    <string name="theme_pure_light">Claro Puro</string>
+    <string name="home_quick_capture_placeholder">Escribe algo rápido…</string>
+    <string name="cd_toggle_list">Ver lista compacta</string>
+    <string name="cd_toggle_bento">Ver cuadrícula bento</string>
+    <string name="cd_open_editor">Abrir editor completo</string>
+    <string name="cd_save_quick">Guardar nota rápida</string>
+    <string name="cd_scan_ocr">Escanear con OCR</string>
 </resources>

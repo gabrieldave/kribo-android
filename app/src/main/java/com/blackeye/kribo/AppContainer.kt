@@ -10,6 +10,7 @@ import com.blackeye.kribo.ocr.AttachmentStore
 import com.blackeye.kribo.ocr.OcrQuotaStore
 import com.blackeye.kribo.ocr.OcrSubsystem
 import com.blackeye.kribo.security.KeystoreSecureStore
+import com.blackeye.kribo.ui.preferences.UiPreferences
 import java.io.File
 
 /**
@@ -43,4 +44,7 @@ class AppContainer(context: Context) {
     }
 
     val billingManager: BillingManager by lazy { BillingManager(appContext) }
+
+    /** UI-only preferences (theme + home layout); never touches Room, OCR or secure storage. */
+    val uiPreferences: UiPreferences by lazy { UiPreferences(appContext) }
 }

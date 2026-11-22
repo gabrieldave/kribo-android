@@ -2,10 +2,12 @@
 
 Notas rápidas, escaneo OCR local y búsqueda. Privado por diseño, sin cuentas y sin rastreo.
 
+Home ofrece lista compacta o cuadrícula Bento, cuatro temas (Obsidiana, Papel Cálido, AMOLED Negro y Claro Puro), captura rápida inferior y escaneo OCR en un toque.
+
 - **Paquete:** `com.blackeye.kribo`
 - **Stack:** Kotlin · Jetpack Compose · Material 3 · Room v2 · SplashScreen API · ML Kit Document Scanner + ONNX Runtime PP-OCRv5
 - **SDK:** compileSdk 36 · targetSdk 36 · minSdk 26
-- **Versión:** 1.0.1 (versionCode 2)
+- **Versión:** 1.0.2 (versionCode 3)
 - **Billing:** Google Play Billing `billing-ktx` 8.3.0
 
 ## Requisitos

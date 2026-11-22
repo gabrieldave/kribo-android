@@ -12,6 +12,7 @@ splashscreen = "1.2.0"
 room = "2.8.5"
 billing = "8.3.0"
 junit = "4.13.2"
+coil = "2.7.0"
 serialization = "1.9.0"
 onnxruntime = "1.24.3"
 mlkitDocScanner = "16.0.0"
@@ -43,6 +44,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
 billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }

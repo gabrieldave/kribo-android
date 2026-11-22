@@ -9,7 +9,10 @@ import com.blackeye.kribo.data.DEFAULT_FOLDER_GENERAL
 import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.blocks.AttachmentBlock
+import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.NoteBlock
+import com.blackeye.kribo.data.blocks.ParagraphBlock
+import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.previewText
 import com.blackeye.kribo.ocr.OcrQuotaStore
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +34,10 @@ data class NoteListItem(
     val note: NoteEntity,
     val snippet: String,
     val matchedOcr: Boolean,
+    val hasOcr: Boolean,
+    val tasksDone: Int,
+    val tasksTotal: Int,
+    val attachmentPath: String?,
 )
 
 enum class ScanPhase { IDLE, SCANNING, COMPLETE, ERROR }
@@ -99,6 +106,8 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _freeScansLeft = MutableStateFlow(OcrQuotaStore.FREE_OCR_LIMIT)
     val freeScansLeft: StateFlow<Int> = _freeScansLeft.asStateFlow()
+
+    private val attachmentPathCache = mutableMapOf<Long, String?>()
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
@@ -326,10 +335,37 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         _backupState.value = BackupUiState()
     }
 
-    private fun NoteEntity.toListItem(activeQuery: String): NoteListItem {
-        if (activeQuery.isBlank()) {
-            return NoteListItem(note = this, snippet = previewText, matchedOcr = false)
+    /** Creates a note from the bottom capture bar without leaving Home. */
+    fun quickCapture(text: String, onSaved: () -> Unit) {
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val folderId = selectedFolderId.value ?: DEFAULT_FOLDER_GENERAL
+            withContext(Dispatchers.IO) {
+                repository.createNote(
+                    folderId = folderId,
+                    blocks = listOf(ParagraphBlock(text = clean)),
+                )
+            }
+            onSaved()
         }
+    }
+
+    private suspend fun NoteEntity.toListItem(activeQuery: String): NoteListItem {
+        val blocks = BlockCodec.decode(blocksJson)
+        val tasks = blocks.filterIsInstance<TaskBlock>()
+        val hasAttachment = blocks.any { it is AttachmentBlock }
+        val base = NoteListItem(
+            note = this,
+            snippet = previewText,
+            matchedOcr = false,
+            hasOcr = ocrTextIndex.isNotBlank(),
+            tasksDone = tasks.count { it.checked },
+            tasksTotal = tasks.size,
+            attachmentPath = if (hasAttachment) attachmentPathFor(id) else null,
+        )
+        if (activeQuery.isBlank()) return base
+
         val inOcr = ocrTextIndex.contains(activeQuery, ignoreCase = true)
         val source = when {
             inOcr -> ocrTextIndex
@@ -343,6 +379,13 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
             .replace('\n', ' ')
             .trim()
             .let { if (start > 0) "…$it" else it }
-        return NoteListItem(note = this, snippet = snippet, matchedOcr = inOcr)
+        return base.copy(snippet = snippet, matchedOcr = inOcr)
+    }
+
+    private suspend fun attachmentPathFor(noteId: Long): String? {
+        if (attachmentPathCache.containsKey(noteId)) return attachmentPathCache[noteId]
+        val path = repository.getAttachments(noteId).firstOrNull()?.filePath
+        attachmentPathCache[noteId] = path
+        return path
     }
 }

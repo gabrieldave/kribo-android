@@ -19,12 +19,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Notes
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
@@ -32,14 +39,17 @@ import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.rounded.ViewList
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -57,9 +67,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,9 +83,11 @@ import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.common.findActivity
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
+import com.blackeye.kribo.ui.components.BentoNoteCard
+import com.blackeye.kribo.ui.components.CompactNoteRow
 import com.blackeye.kribo.ui.components.EmptyStateCard
-import com.blackeye.kribo.ui.components.NoteCard
-import com.blackeye.kribo.ui.components.StatusPill
+import com.blackeye.kribo.ui.preferences.HomeLayout
+import com.blackeye.kribo.ui.preferences.UiPreferences
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
@@ -83,6 +97,7 @@ private data class FolderDraft(val id: Long?, val name: String)
 @Composable
 fun HomeScreen(
     viewModel: LibraryViewModel,
+    uiPreferences: UiPreferences,
     billingState: BillingUiState,
     onOpenNote: (Long) -> Unit,
     onSettings: () -> Unit,
@@ -98,15 +113,17 @@ fun HomeScreen(
     val paywallVisible by viewModel.paywallVisible.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val freeScansLeft by viewModel.freeScansLeft.collectAsStateWithLifecycle()
+    val homeLayout by uiPreferences.homeLayout.collectAsStateWithLifecycle()
 
     var notePendingDelete by remember { mutableStateOf<NoteEntity?>(null) }
     var showFolderManager by remember { mutableStateOf(false) }
     var folderDraft by remember { mutableStateOf<FolderDraft?>(null) }
     var draftName by rememberSaveable { mutableStateOf("") }
+    var captureText by rememberSaveable { mutableStateOf("") }
 
     val folderNames = remember(folders) { folders.associate { it.id to it.name } }
+    val folderColors = remember(folders) { folders.associate { it.id to it.color() } }
     val largeFont = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.4f
-    val actionHeight = if (largeFont) 80.dp else 56.dp
 
     val scanLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -171,8 +188,26 @@ fun HomeScreen(
         actions = {
             IconButton(
                 onClick = {
-                    importLauncher.launch(arrayOf("*/*"))
+                    uiPreferences.setHomeLayout(
+                        if (homeLayout == HomeLayout.COMPACT) HomeLayout.BENTO else HomeLayout.COMPACT,
+                    )
                 },
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = if (homeLayout == HomeLayout.COMPACT) {
+                        Icons.Rounded.GridView
+                    } else {
+                        Icons.Rounded.ViewList
+                    },
+                    contentDescription = stringResource(
+                        if (homeLayout == HomeLayout.COMPACT) R.string.cd_toggle_bento
+                        else R.string.cd_toggle_list,
+                    ),
+                )
+            }
+            IconButton(
+                onClick = { importLauncher.launch(arrayOf("*/*")) },
                 modifier = Modifier.size(48.dp),
             ) {
                 Icon(
@@ -189,6 +224,23 @@ fun HomeScreen(
                     contentDescription = stringResource(R.string.cd_settings),
                 )
             }
+        },
+        footer = {
+            QuickCaptureBar(
+                text = captureText,
+                onTextChange = { captureText = it },
+                onSend = {
+                    if (captureText.isNotBlank()) {
+                        viewModel.quickCapture(captureText) { captureText = "" }
+                    }
+                },
+                onOpenEditor = {
+                    viewModel.createNote { noteId -> onOpenNote(noteId) }
+                },
+                onScan = { launchScanner() },
+                freeScansLeft = if (billingState.owned) null else freeScansLeft,
+                largeFont = largeFont,
+            )
         },
     ) {
         OutlinedTextField(
@@ -215,7 +267,7 @@ fun HomeScreen(
             singleLine = true,
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         Row(
             modifier = Modifier
@@ -263,77 +315,56 @@ fun HomeScreen(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(8.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(
-                onClick = {
-                    viewModel.createNote { noteId -> onOpenNote(noteId) }
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = actionHeight),
-            ) {
-                HomeActionContent(
-                    icon = Icons.Rounded.Edit,
-                    label = stringResource(R.string.home_action_write),
-                    stacked = largeFont,
+        Box(modifier = Modifier.weight(1f)) {
+            if (notes.isEmpty()) {
+                EmptyStateCard(
+                    icon = Icons.AutoMirrored.Rounded.Notes,
+                    text = if (query.isBlank()) {
+                        stringResource(R.string.home_recent_empty)
+                    } else {
+                        stringResource(R.string.search_no_results, query)
+                    },
                 )
-            }
-            FilledTonalButton(
-                onClick = { launchScanner() },
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = actionHeight),
-            ) {
-                HomeActionContent(
-                    icon = Icons.Rounded.DocumentScanner,
-                    label = stringResource(R.string.home_action_scan),
-                    stacked = largeFont,
-                )
-            }
-        }
-
-        if (!billingState.owned) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.home_free_scans, freeScansLeft),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Spacer(Modifier.height(18.dp))
-
-        if (notes.isEmpty()) {
-            EmptyStateCard(
-                icon = Icons.AutoMirrored.Rounded.Notes,
-                text = if (query.isBlank()) {
-                    stringResource(R.string.home_recent_empty)
-                } else {
-                    stringResource(R.string.search_no_results, query)
-                },
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(items = notes, key = { it.note.id }) { item ->
-                    NoteCard(
-                        note = item.note,
-                        snippet = item.snippet,
-                        folderName = item.note.folderId?.let(folderNames::get),
-                        matchedOcr = item.matchedOcr,
-                        onClick = { onOpenNote(item.note.id) },
-                        onDelete = { notePendingDelete = item.note },
-                        onTogglePin = { viewModel.togglePinned(item.note) },
-                    )
+            } else if (homeLayout == HomeLayout.COMPACT) {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    itemsIndexed(items = notes, key = { _, item -> item.note.id }) { index, item ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                            )
+                        }
+                        CompactNoteRow(
+                            item = item,
+                            folderName = item.note.folderId?.let(folderNames::get),
+                            folderColor = item.note.folderId?.let(folderColors::get)
+                                ?: MaterialTheme.colorScheme.outline,
+                            onClick = { onOpenNote(item.note.id) },
+                            onDelete = { notePendingDelete = item.note },
+                            onTogglePin = { viewModel.togglePinned(item.note) },
+                        )
+                    }
+                    item { Spacer(Modifier.height(12.dp)) }
                 }
-                item { Spacer(Modifier.height(12.dp)) }
+            } else {
+                LazyVerticalStaggeredGrid(
+                    columns = StaggeredGridCells.Fixed(2),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalItemSpacing = 10.dp,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(items = notes, key = { item -> item.note.id }) { item ->
+                        BentoNoteCard(
+                            item = item,
+                            folderName = item.note.folderId?.let(folderNames::get),
+                            folderColor = item.note.folderId?.let(folderColors::get)
+                                ?: MaterialTheme.colorScheme.outline,
+                            onClick = { onOpenNote(item.note.id) },
+                        )
+                    }
+                    item { Spacer(Modifier.height(12.dp)) }
+                }
             }
         }
     }
@@ -571,32 +602,115 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeActionContent(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    stacked: Boolean,
+private fun QuickCaptureBar(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onOpenEditor: () -> Unit,
+    onScan: () -> Unit,
+    freeScansLeft: Int?,
+    largeFont: Boolean,
 ) {
-    if (stacked) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (freeScansLeft != null) {
+            Text(
+                text = stringResource(R.string.home_free_scans, freeScansLeft),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
             )
-            Spacer(Modifier.height(4.dp))
-            Text(text = label, maxLines = 1)
         }
-    } else {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(text = label, maxLines = 1)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.heightIn(min = 54.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = onTextChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 14.dp, end = 4.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { onSend() }),
+                        decorationBox = { inner ->
+                            Box {
+                                if (text.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.home_quick_capture_placeholder),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                    IconButton(
+                        onClick = onOpenEditor,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.OpenInFull,
+                            contentDescription = stringResource(R.string.cd_open_editor),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = onSend,
+                        enabled = text.isNotBlank(),
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = stringResource(R.string.cd_save_quick),
+                            tint = if (text.isNotBlank()) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                            },
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+
+            FilledIconButton(
+                onClick = onScan,
+                modifier = Modifier.size(if (largeFont) 62.dp else 56.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DocumentScanner,
+                    contentDescription = stringResource(R.string.cd_scan_ocr),
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        }
     }
 }
 

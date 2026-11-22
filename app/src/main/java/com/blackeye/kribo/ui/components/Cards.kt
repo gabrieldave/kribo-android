@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.Icon
@@ -27,139 +28,251 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.blackeye.kribo.R
-import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.titleText
 import com.blackeye.kribo.ui.common.formatNoteDate
+import com.blackeye.kribo.ui.common.formatNoteDateShort
+import com.blackeye.kribo.ui.home.NoteListItem
+import java.io.File
 
-/** Compact note row for Home and Search results, with folder, OCR badge and pin. */
+/** High-density row for the compact Home list, separated by hairline dividers. */
 @Composable
-fun NoteCard(
-    note: NoteEntity,
-    snippet: String,
+fun CompactNoteRow(
+    item: NoteListItem,
     folderName: String?,
-    matchedOcr: Boolean,
+    folderColor: Color,
     onClick: () -> Unit,
-    onDelete: (() -> Unit)? = null,
-    onTogglePin: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
+    onDelete: () -> Unit,
+    onTogglePin: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val note = item.note
     val title = note.titleText.ifBlank { stringResource(R.string.note_untitled) }
 
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(36.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (note.isPinned) MaterialTheme.colorScheme.primary else folderColor),
+        )
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (item.hasOcr) {
+                    Spacer(Modifier.width(6.dp))
+                    StatusPill(text = stringResource(R.string.badge_ocr))
+                }
+                if (item.tasksTotal > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    TaskPill(done = item.tasksDone, total = item.tasksTotal)
+                }
+            }
+            if (item.snippet.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = item.snippet,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!folderName.isNullOrBlank()) {
+                    FolderTag(name = folderName, color = folderColor)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    text = formatNoteDate(note.updatedAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+        }
+
+        if (item.attachmentPath != null) {
+            Spacer(Modifier.width(8.dp))
+            AsyncImage(
+                model = File(item.attachmentPath),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+            )
+        }
+
+        IconButton(
+            onClick = onTogglePin,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.PushPin,
+                contentDescription = stringResource(R.string.cd_pin),
+                tint = if (note.isPinned) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                },
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Delete,
+                contentDescription = stringResource(R.string.home_note_options),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+    }
+}
+
+/** Rounded Bento tile for the 2-column staggered grid. */
+@Composable
+fun BentoNoteCard(
+    item: NoteListItem,
+    folderName: String?,
+    folderColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val note = item.note
+    val title = note.titleText.ifBlank { stringResource(R.string.note_untitled) }
+    val shape = RoundedCornerShape(22.dp)
+
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .clickable(role = Role.Button, onClick = onClick),
         shape = shape,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            1.dp,
-            if (note.isPinned) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-            } else {
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-            },
-        ),
+        border = BorderStroke(1.dp, folderColor.copy(alpha = 0.55f)),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 64.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(shape)
-                    .clickable(role = Role.Button, onClick = onClick)
-                    .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (matchedOcr) {
-                        Spacer(Modifier.width(8.dp))
-                        StatusPill(text = stringResource(R.string.badge_ocr))
+        Column {
+            if (item.attachmentPath != null) {
+                AsyncImage(
+                    model = File(item.attachmentPath),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(118.dp),
+                )
+            }
+            Column(modifier = Modifier.padding(14.dp)) {
+                if (item.hasOcr || item.tasksTotal > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (item.hasOcr) {
+                            StatusPill(text = stringResource(R.string.badge_ocr))
+                        }
+                        if (item.tasksTotal > 0) {
+                            TaskPill(done = item.tasksDone, total = item.tasksTotal)
+                        }
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
-                if (snippet.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (item.snippet.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = snippet,
+                        text = item.snippet,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!folderName.isNullOrBlank()) {
-                        FolderTag(name = folderName)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(
-                        text = formatNoteDate(note.updatedAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Spacer(Modifier.height(10.dp))
+                if (!folderName.isNullOrBlank()) {
+                    FolderTag(name = folderName, color = folderColor)
+                    Spacer(Modifier.height(4.dp))
                 }
-            }
-
-            if (onTogglePin != null) {
-                IconButton(
-                    onClick = onTogglePin,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PushPin,
-                        contentDescription = stringResource(R.string.cd_pin),
-                        tint = if (note.isPinned) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                        },
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-            if (onDelete != null) {
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier
-                        .padding(end = 2.dp)
-                        .size(44.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = stringResource(R.string.home_note_options),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            } else {
-                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = formatNoteDateShort(note.updatedAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
 }
 
 @Composable
-fun FolderTag(name: String, modifier: Modifier = Modifier) {
+fun TaskPill(done: Int, total: Int) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.CheckBox,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                text = "$done/$total",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+fun FolderTag(name: String, color: Color, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = color.copy(alpha = 0.14f),
     ) {
         Text(
             text = name,

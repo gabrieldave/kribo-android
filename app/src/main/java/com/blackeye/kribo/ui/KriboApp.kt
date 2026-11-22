@@ -36,6 +36,7 @@ fun KriboApp(
         composable(Routes.HOME) {
             HomeScreen(
                 viewModel = library,
+                uiPreferences = container.uiPreferences,
                 billingState = billingState,
                 onOpenNote = { id -> navController.navigate(Routes.noteEdit(id)) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
@@ -63,6 +64,7 @@ fun KriboApp(
             SettingsScreen(
                 billingState = billingState,
                 library = library,
+                uiPreferences = container.uiPreferences,
                 onBack = { navController.popBackStack() },
                 onPurchase = onPurchase,
                 onRestorePurchases = container.billingManager::refresh,

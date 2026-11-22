@@ -23,7 +23,8 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
 
         setContent {
-            KriboTheme {
+            val theme by container.uiPreferences.theme.collectAsStateWithLifecycle()
+            KriboTheme(theme = theme) {
                 val billingState by container.billingManager.state.collectAsStateWithLifecycle()
                 KriboApp(
                     container = container,

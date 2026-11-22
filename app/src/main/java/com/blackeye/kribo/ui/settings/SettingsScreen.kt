@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Archive
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
@@ -50,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -65,11 +69,14 @@ import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.StatusPill
 import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.home.TransferPhase
+import com.blackeye.kribo.ui.preferences.AppTheme
+import com.blackeye.kribo.ui.preferences.UiPreferences
 
 @Composable
 fun SettingsScreen(
     billingState: BillingUiState,
     library: LibraryViewModel,
+    uiPreferences: UiPreferences,
     onBack: () -> Unit,
     onPurchase: () -> Unit,
     onRestorePurchases: () -> Unit,
@@ -78,6 +85,7 @@ fun SettingsScreen(
     var connectionsExpanded by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     val selectedLanguage = AppLanguage.current()
+    val selectedTheme by uiPreferences.theme.collectAsStateWithLifecycle()
     val importState by library.importState.collectAsStateWithLifecycle()
     val backupState by library.backupState.collectAsStateWithLifecycle()
 
@@ -100,6 +108,39 @@ fun SettingsScreen(
         title = stringResource(R.string.settings_title),
         onBack = onBack,
     ) {
+        SectionLabel(stringResource(R.string.settings_section_appearance))
+        SettingsCard {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconTile(Icons.Rounded.Palette)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_theme_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_theme_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            SettingsDivider()
+            AppTheme.entries.forEachIndexed { index, theme ->
+                if (index > 0) SettingsDivider()
+                ThemeRow(
+                    theme = theme,
+                    selected = theme == selectedTheme,
+                    onClick = { uiPreferences.setTheme(theme) },
+                )
+            }
+        }
+
         SectionLabel(stringResource(R.string.settings_section_preferences))
         SettingsCard {
             Row(
@@ -483,6 +524,62 @@ private fun AppLanguage.label(): String = stringResource(
         AppLanguage.SYSTEM -> R.string.language_system
         AppLanguage.SPANISH -> R.string.language_spanish
         AppLanguage.ENGLISH -> R.string.language_english
+    },
+)
+
+@Composable
+private fun ThemeRow(
+    theme: AppTheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color(theme.previewBackground))
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(Color(theme.previewAccent)),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = theme.label(),
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        RadioButton(
+            selected = selected,
+            onClick = null,
+        )
+    }
+}
+
+@Composable
+private fun AppTheme.label(): String = stringResource(
+    when (this) {
+        AppTheme.OBSIDIAN -> R.string.theme_obsidian
+        AppTheme.WARM_PAPER -> R.string.theme_warm_paper
+        AppTheme.AMOLED -> R.string.theme_amoled
+        AppTheme.PURE_LIGHT -> R.string.theme_pure_light
     },
 )
 

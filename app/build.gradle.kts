@@ -46,8 +46,8 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -157,6 +157,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.billing.ktx)
+    implementation(libs.coil.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.document.scanner)

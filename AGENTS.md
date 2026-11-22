@@ -17,6 +17,9 @@ Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CE
 
 ## 2. Paleta y tema
 
+- Cuatro temas oficiales: **Obsidiana** (default), **Papel Cálido**, **AMOLED Negro** y **Claro Puro**, implementados solo en `ui/theme/Theme.kt` y persistidos en `UiPreferences`.
+- Prohibido hardcodear colores de tema en pantallas; las tarjetas Bento pueden tintar el borde con el color de la carpeta.
+
 | Rol | Oscuro | Claro |
 |---|---|---|
 | Fondo obsidiana | `#0D1117` | `#F6F8FA` |

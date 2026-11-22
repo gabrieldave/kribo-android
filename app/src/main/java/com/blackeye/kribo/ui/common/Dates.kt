@@ -8,3 +8,10 @@ fun formatNoteDate(epochMillis: Long): String {
     val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     return formatter.format(Date(epochMillis))
 }
+
+/** Short locale date for Bento tiles, where horizontal space is scarce. */
+fun formatNoteDateShort(epochMillis: Long): String {
+    val formatter = DateFormat.getDateInstance(DateFormat.SHORT)
+    return formatter.format(Date(epochMillis))
+}
+
