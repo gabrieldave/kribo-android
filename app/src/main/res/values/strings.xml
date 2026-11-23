@@ -234,6 +234,13 @@
     <string name="drive_message_config">OAuth configuration is not ready. Check the app signing SHA-1.</string>
     <string name="drive_message_unknown">Could not sync. Please try again.</string>
 
+    <string name="security_unauthorized_title">Unauthorized application</string>
+    <string name="security_unauthorized_body">This copy of Kribo is not signed by BLACK EYE. Download it from Google Play.</string>
+    <string name="settings_terms_title">Terms of service</string>
+    <string name="settings_terms_subtitle">Kribo terms of use</string>
+    <string name="settings_delete_account_title">Delete data and account</string>
+    <string name="settings_delete_account_subtitle">How to request deletion of your data</string>
+
     <string name="settings_section_data">Data</string>
     <string name="settings_import_title">Import notes</string>
     <string name="settings_import_subtitle">Evernote .enex, Notion/Obsidian .md or .zip</string>

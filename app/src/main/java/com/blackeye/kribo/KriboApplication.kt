@@ -8,11 +8,17 @@ class KriboApplication : Application() {
     lateinit var container: AppContainer
         private set
 
+    /** Release builds show a blocking screen instead of killing the process. */
+    var isSignatureAuthorized: Boolean = true
+        private set
+
     override fun onCreate() {
         super.onCreate()
 
-        // Signature pinning is enforced for release builds only.
-        if (!BuildConfig.DEBUG) {
+        // Release-only pinning. Debug remains unrestricted for local development.
+        isSignatureAuthorized = if (BuildConfig.DEBUG) {
+            true
+        } else {
             AppSignatureVerifier.enforce(this)
         }
 

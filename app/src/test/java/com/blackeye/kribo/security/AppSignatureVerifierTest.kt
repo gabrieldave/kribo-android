@@ -16,12 +16,13 @@ class AppSignatureVerifierTest {
     @Test
     fun masterFingerprintIsCanonical() {
         assertEquals(master, AppSignatureVerifier.normalizeFingerprint(master))
-        assertEquals(32, master.split(":").size)
+        assertEquals(64, master.length)
+        assertEquals("", AppSignatureVerifier.normalizeFingerprint("not-a-fingerprint"))
     }
 
     @Test
     fun normalizationAcceptsLowercaseAndMissingSeparators() {
-        val raw = master.replace(":", "").lowercase()
+        val raw = master.lowercase()
         assertEquals(master, AppSignatureVerifier.normalizeFingerprint(raw))
     }
 
@@ -79,8 +80,30 @@ class AppSignatureVerifierTest {
     }
 
     @Test
-    fun rotationFallsBackToTrustedHistory() {
+    fun hybridCoSigningAcceptsAllTrustedSigners() {
+        val second = fingerprint("CC")
         assertTrue(
+            AppSignatureVerifier.isSignatureTrusted(
+                currentSigners = listOf(master, second),
+                certificateHistory = emptyList(),
+                trusted = setOf(master, second),
+            ),
+        )
+    }
+
+    @Test
+    fun emptyCurrentSignersFallBackToTrustedHistory() {
+        assertTrue(
+            AppSignatureVerifier.isSignatureTrusted(
+                currentSigners = emptyList(),
+                certificateHistory = listOf(master),
+            ),
+        )
+    }
+
+    @Test
+    fun unknownCurrentSignerDoesNotFallBackToHistory() {
+        assertFalse(
             AppSignatureVerifier.isSignatureTrusted(
                 currentSigners = listOf(unknown),
                 certificateHistory = listOf(master),

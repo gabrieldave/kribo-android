@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ui.KriboApp
+import com.blackeye.kribo.ui.security.UnauthorizedScreen
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.theme.KriboTheme
 
@@ -25,29 +26,35 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val authorized = (application as KriboApplication).isSignatureAuthorized
         setContent {
             val theme by container.uiPreferences.theme.collectAsStateWithLifecycle()
-            val isPro by container.entitlementRepository.isPro.collectAsStateWithLifecycle()
-            val resolved by container.entitlementRepository.resolved.collectAsStateWithLifecycle()
-            LaunchedEffect(theme, isPro, resolved) {
-                if (resolved && !isPro && theme in ProLimits.PRO_THEMES) {
-                    container.uiPreferences.setTheme(AppTheme.OBSIDIAN)
-                }
-            }
             KriboTheme(theme = theme) {
-                val billingState by container.billingManager.state.collectAsStateWithLifecycle()
-                KriboApp(
-                    container = container,
-                    billingState = billingState,
-                    isPro = isPro,
-                    onPurchase = { container.entitlementRepository.launchPurchase(this) },
-                )
+                if (!authorized) {
+                    UnauthorizedScreen()
+                } else {
+                    val isPro by container.entitlementRepository.isPro.collectAsStateWithLifecycle()
+                    val resolved by container.entitlementRepository.resolved.collectAsStateWithLifecycle()
+                    LaunchedEffect(theme, isPro, resolved) {
+                        if (resolved && !isPro && theme in ProLimits.PRO_THEMES) {
+                            container.uiPreferences.setTheme(AppTheme.OBSIDIAN)
+                        }
+                    }
+                    val billingState by container.billingManager.state.collectAsStateWithLifecycle()
+                    KriboApp(
+                        container = container,
+                        billingState = billingState,
+                        isPro = isPro,
+                        onPurchase = { container.entitlementRepository.launchPurchase(this) },
+                    )
+                }
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        if (!(application as KriboApplication).isSignatureAuthorized) return
         // Defer Billing until after the first frame so cold start stays under 250 ms.
         Choreographer.getInstance().postFrameCallback {
             container.entitlementRepository.refresh()

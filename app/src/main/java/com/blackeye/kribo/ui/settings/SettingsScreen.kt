@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -305,6 +306,21 @@ fun SettingsScreen(
                 onClick = { openPrivacyPolicy(context) },
             )
             SettingsDivider()
+            SettingsDivider()
+            AboutLinkRow(
+                icon = Icons.Rounded.Description,
+                title = stringResource(R.string.settings_terms_title),
+                subtitle = stringResource(R.string.settings_terms_subtitle),
+                onClick = { openTerms(context) },
+            )
+            SettingsDivider()
+            AboutLinkRow(
+                icon = Icons.Rounded.DeleteOutline,
+                title = stringResource(R.string.settings_delete_account_title),
+                subtitle = stringResource(R.string.settings_delete_account_subtitle),
+                onClick = { openDeleteAccount(context) },
+            )
+            SettingsDivider()
             AboutLinkRow(
                 icon = Icons.Rounded.Description,
                 title = stringResource(R.string.settings_licenses_title),
@@ -475,15 +491,20 @@ private fun AboutLinkRow(
     }
 }
 
-private fun openPrivacyPolicy(context: Context) {
+private fun openPrivacyPolicy(context: Context) =
+    openLegalPage(context, "/es/privacy", "/privacy")
+
+private fun openTerms(context: Context) =
+    openLegalPage(context, "/es/terms", "/terms")
+
+private fun openDeleteAccount(context: Context) =
+    openLegalPage(context, "/es/delete-account", "/delete-account")
+
+private fun openLegalPage(context: Context, spanishPath: String, englishPath: String) {
     val language = AppLanguage.current()
     val spanish = language == AppLanguage.SPANISH ||
         (language == AppLanguage.SYSTEM && Locale.getDefault().language.equals("es", ignoreCase = true))
-    val url = if (spanish) {
-        "https://kribo.iareal.net/es/privacy"
-    } else {
-        "https://kribo.iareal.net/privacy"
-    }
+    val url = "https://kribo.iareal.net" + if (spanish) spanishPath else englishPath
     runCatching {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }

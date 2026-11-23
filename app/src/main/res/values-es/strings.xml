@@ -234,6 +234,13 @@
     <string name="drive_message_config">La configuración OAuth aún no está lista. Revisa el SHA-1 de firma de la app.</string>
     <string name="drive_message_unknown">No se pudo sincronizar. Inténtalo de nuevo.</string>
 
+    <string name="security_unauthorized_title">Aplicación no autorizada</string>
+    <string name="security_unauthorized_body">Esta copia de Kribo no está firmada por BLACK EYE. Descárgala desde Google Play.</string>
+    <string name="settings_terms_title">Términos del servicio</string>
+    <string name="settings_terms_subtitle">Condiciones de uso de Kribo</string>
+    <string name="settings_delete_account_title">Eliminar datos y cuenta</string>
+    <string name="settings_delete_account_subtitle">Cómo solicitar el borrado de tus datos</string>
+
     <string name="settings_section_data">Datos</string>
     <string name="settings_import_title">Importar notas</string>
     <string name="settings_import_subtitle">Evernote .enex, Notion/Obsidian .md o .zip</string>
