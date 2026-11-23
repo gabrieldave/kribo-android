@@ -17,6 +17,27 @@ import org.junit.runner.RunWith
 class DensePageOcrDeviceTest {
 
     @Test
+    fun mlKitFallbackAlsoReadsDensePage(): Unit = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val work = File(context.cacheDir, "dense-mlkit-${System.currentTimeMillis()}").apply { mkdirs() }
+        val image = File(work, "dense-page.jpg")
+        DensePageFactory.singlePage(image)
+
+        val engine = MlKitBundledOcrEngine()
+        val started = System.currentTimeMillis()
+        val text = engine.recognize(image)
+        val elapsed = System.currentTimeMillis() - started
+        engine.close()
+
+        println("MlKitDensePage: chars=${text?.length ?: 0} elapsed=${elapsed}ms")
+        assertTrue("ML Kit fallback returned too little text: $text", (text?.length ?: 0) > 300)
+        val normalized = text!!.lowercase()
+        assertTrue("ML Kit missed body text", normalized.contains("documento") && normalized.contains("lectura"))
+        work.deleteRecursively()
+        Unit
+    }
+
+    @Test
     fun extractsCompleteParagraphsFromDensePage(): Unit = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val work = File(context.cacheDir, "dense-ocr-${System.currentTimeMillis()}").apply { mkdirs() }
