@@ -41,9 +41,7 @@
     <string name="scan_engine_note">Lazy loading is wired and ready for ScanOffline.</string>
 
     <string name="settings_title">Settings</string>
-    <string name="settings_section_preferences">Preferences</string>
     <string name="settings_language_title">Language</string>
-    <string name="settings_language_subtitle">Choose the app language</string>
     <string name="language_system">Automatic</string>
     <string name="language_spanish">Español</string>
     <string name="language_english">English</string>
@@ -190,8 +188,12 @@
     <string name="backup_error_title">Backup failed</string>
     <string name="backup_error_body">The backup could not be written to the selected location.</string>
     <string name="settings_section_appearance">Appearance</string>
+    <string name="theme_short_light">Light</string>
+    <string name="theme_short_paper">Paper</string>
+    <string name="theme_short_obsidian">Obsidian</string>
+    <string name="theme_short_amoled">AMOLED</string>
+    <string name="language_auto_short">Auto</string>
     <string name="settings_theme_title">Theme</string>
-    <string name="settings_theme_subtitle">Choose how Kribo looks</string>
     <string name="theme_obsidian">Obsidian</string>
     <string name="theme_warm_paper">Warm Paper</string>
     <string name="theme_amoled">AMOLED Black</string>

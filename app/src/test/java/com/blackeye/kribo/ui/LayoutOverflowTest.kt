@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.ui.home.QuickCaptureBar
+import com.blackeye.kribo.ui.preferences.AppTheme
+import com.blackeye.kribo.ui.settings.AppLanguage
+import com.blackeye.kribo.ui.settings.CompactAppearanceCard
 import com.blackeye.kribo.ui.note.AttachmentActionsRow
 import com.blackeye.kribo.ui.note.EditorToolbar
 import com.blackeye.kribo.ui.theme.KriboTheme
@@ -151,6 +154,59 @@ class LayoutOverflowTest {
                     "Quick capture field collapsed at scale $fontScale",
                     field.width / TEST_DENSITY >= 80f,
                 )
+            }
+        }
+    }
+
+    @Test
+    fun compactAppearanceCardFits360DpInBothLanguages() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        CompactAppearanceCard(
+                            selectedTheme = AppTheme.OBSIDIAN,
+                            selectedLanguage = AppLanguage.SYSTEM,
+                            onThemeSelected = {},
+                            onLanguageSelected = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val controls = listOf(
+            "theme-pure_light",
+            "theme-warm_paper",
+            "theme-obsidian",
+            "theme-amoled",
+            "language-system",
+            "language-spanish",
+            "language-english",
+        )
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                if (fontScale == 1f) {
+                    val card = compose.onNodeWithTag("settings-appearance-card")
+                        .fetchSemanticsNode().boundsInRoot
+                    val cardHeightDp = card.height / TEST_DENSITY
+                    assertTrue(
+                        "Appearance card is ${cardHeightDp}dp, expected <= 266.6dp",
+                        cardHeightDp <= 266.7f,
+                    )
+                }
+                controls.forEach { tag -> assertControlFits(tag, fontScale) }
             }
         }
     }

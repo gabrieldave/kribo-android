@@ -60,8 +60,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blackeye.kribo.BuildConfig
@@ -115,70 +120,12 @@ fun SettingsScreen(
         onBack = onBack,
     ) {
         SectionLabel(stringResource(R.string.settings_section_appearance))
-        SettingsCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconTile(Icons.Rounded.Palette)
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_theme_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_theme_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            SettingsDivider()
-            AppTheme.entries.forEachIndexed { index, theme ->
-                if (index > 0) SettingsDivider()
-                ThemeRow(
-                    theme = theme,
-                    selected = theme == selectedTheme,
-                    onClick = { uiPreferences.setTheme(theme) },
-                )
-            }
-        }
-
-        SectionLabel(stringResource(R.string.settings_section_preferences))
-        SettingsCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconTile(Icons.Rounded.Language)
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_language_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_language_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            SettingsDivider()
-            AppLanguage.entries.forEachIndexed { index, language ->
-                if (index > 0) SettingsDivider()
-                LanguageRow(
-                    language = language,
-                    selected = language == selectedLanguage,
-                    onClick = { AppLanguage.apply(language) },
-                )
-            }
-        }
+        CompactAppearanceCard(
+            selectedTheme = selectedTheme,
+            selectedLanguage = selectedLanguage,
+            onThemeSelected = { uiPreferences.setTheme(it) },
+            onLanguageSelected = { AppLanguage.apply(it) },
+        )
 
         SectionLabel(stringResource(R.string.settings_section_data))
         SettingsCard {
@@ -572,93 +519,228 @@ private fun SettingsActionRow(
 }
 
 @Composable
-private fun LanguageRow(
-    language: AppLanguage,
-    selected: Boolean,
-    onClick: () -> Unit,
+internal fun CompactAppearanceCard(
+    selectedTheme: AppTheme,
+    selectedLanguage: AppLanguage,
+    onThemeSelected: (AppTheme) -> Unit,
+    onLanguageSelected: (AppLanguage) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = language.label(),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
-        RadioButton(
-            selected = selected,
-            onClick = null,
-        )
+    SettingsCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+                .testTag("settings-appearance-card"),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_theme_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            CompactThemeGrid(
+                selectedTheme = selectedTheme,
+                onThemeSelected = onThemeSelected,
+            )
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.settings_language_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            CompactLanguageRow(
+                selectedLanguage = selectedLanguage,
+                onLanguageSelected = onLanguageSelected,
+            )
+        }
+    }
+}
+
+private val COMPACT_THEMES = listOf(
+    AppTheme.PURE_LIGHT,
+    AppTheme.WARM_PAPER,
+    AppTheme.OBSIDIAN,
+    AppTheme.AMOLED,
+)
+
+@Composable
+private fun CompactThemeGrid(
+    selectedTheme: AppTheme,
+    onThemeSelected: (AppTheme) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        COMPACT_THEMES.chunked(2).forEach { rowThemes ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                rowThemes.forEach { theme ->
+                    ThemeSwatchButton(
+                        theme = theme,
+                        selected = theme == selectedTheme,
+                        onClick = { onThemeSelected(theme) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun AppLanguage.label(): String = stringResource(
+private fun ThemeSwatchButton(
+    theme: AppTheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val background = Color(theme.previewBackground)
+    val foreground = when (theme) {
+        AppTheme.PURE_LIGHT -> Color(0xFF0D1117)
+        AppTheme.WARM_PAPER -> Color(0xFF1C1917)
+        AppTheme.OBSIDIAN, AppTheme.AMOLED -> Color.White
+    }
+    val accent = Color(theme.previewAccent)
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(shape)
+            .background(background)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+                },
+                shape = shape,
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.selected = selected }
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .testTag("theme-${theme.id}"),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = theme.compactLabel(),
+                style = MaterialTheme.typography.labelLarge,
+                color = foreground,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (selected) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactLanguageRow(
+    selectedLanguage: AppLanguage,
+    onLanguageSelected: (AppLanguage) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        AppLanguage.entries.forEach { language ->
+            LanguagePill(
+                language = language,
+                selected = language == selectedLanguage,
+                onClick = { onLanguageSelected(language) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LanguagePill(
+    language: AppLanguage,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(999.dp)
+    Surface(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .clip(shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag("language-${language.name.lowercase()}"),
+        shape = shape,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+            },
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = language.compactLabel(),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppTheme.compactLabel(): String = stringResource(
     when (this) {
-        AppLanguage.SYSTEM -> R.string.language_system
-        AppLanguage.SPANISH -> R.string.language_spanish
-        AppLanguage.ENGLISH -> R.string.language_english
+        AppTheme.PURE_LIGHT -> R.string.theme_short_light
+        AppTheme.WARM_PAPER -> R.string.theme_short_paper
+        AppTheme.OBSIDIAN -> R.string.theme_short_obsidian
+        AppTheme.AMOLED -> R.string.theme_short_amoled
     },
 )
 
 @Composable
-private fun ThemeRow(
-    theme: AppTheme,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(Color(theme.previewBackground))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
-                    shape = CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(Color(theme.previewAccent)),
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = theme.label(),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
-        RadioButton(
-            selected = selected,
-            onClick = null,
-        )
-    }
-}
-
-@Composable
-private fun AppTheme.label(): String = stringResource(
+private fun AppLanguage.compactLabel(): String = stringResource(
     when (this) {
-        AppTheme.OBSIDIAN -> R.string.theme_obsidian
-        AppTheme.WARM_PAPER -> R.string.theme_warm_paper
-        AppTheme.AMOLED -> R.string.theme_amoled
-        AppTheme.PURE_LIGHT -> R.string.theme_pure_light
+        AppLanguage.SYSTEM -> R.string.language_auto_short
+        AppLanguage.SPANISH -> R.string.language_spanish
+        AppLanguage.ENGLISH -> R.string.language_english
     },
 )
 

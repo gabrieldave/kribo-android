@@ -41,9 +41,7 @@
     <string name="scan_engine_note">La carga diferida está lista para ScanOffline.</string>
 
     <string name="settings_title">Ajustes</string>
-    <string name="settings_section_preferences">Preferencias</string>
     <string name="settings_language_title">Idioma</string>
-    <string name="settings_language_subtitle">Elige el idioma de la aplicación</string>
     <string name="language_system">Automático</string>
     <string name="language_spanish">Español</string>
     <string name="language_english">English</string>
@@ -190,8 +188,12 @@
     <string name="backup_error_title">No se pudo respaldar</string>
     <string name="backup_error_body">No se pudo escribir el respaldo en la ubicación elegida.</string>
     <string name="settings_section_appearance">Apariencia</string>
+    <string name="theme_short_light">Claro</string>
+    <string name="theme_short_paper">Papel</string>
+    <string name="theme_short_obsidian">Obsidiana</string>
+    <string name="theme_short_amoled">AMOLED</string>
+    <string name="language_auto_short">Auto</string>
     <string name="settings_theme_title">Tema</string>
-    <string name="settings_theme_subtitle">Elige el aspecto de Kribo</string>
     <string name="theme_obsidian">Obsidiana</string>
     <string name="theme_warm_paper">Papel Cálido</string>
     <string name="theme_amoled">AMOLED Negro</string>
