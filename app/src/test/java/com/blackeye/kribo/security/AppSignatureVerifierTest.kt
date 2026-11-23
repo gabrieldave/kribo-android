@@ -8,6 +8,10 @@ import org.junit.Test
 class AppSignatureVerifierTest {
 
     private val master = AppSignatureVerifier.MASTER_SHA256
+    private val play1 = AppSignatureVerifier.PLAY_APP_SIGNING_SHA256_1
+    private val play2 = AppSignatureVerifier.PLAY_APP_SIGNING_SHA256_2
+    private val play3 = AppSignatureVerifier.PLAY_APP_SIGNING_SHA256_3
+    private val official = listOf(master, play1, play2, play3)
     private val unknown = fingerprint("AA")
     private val anotherUnknown = fingerprint("BB")
 
@@ -117,6 +121,62 @@ class AppSignatureVerifierTest {
             AppSignatureVerifier.isSignatureTrusted(
                 currentSigners = listOf(unknown),
                 certificateHistory = listOf(anotherUnknown),
+            ),
+        )
+    }
+
+    @Test
+    fun exactlyFourOfficialFingerprintsAreAllowed() {
+        assertEquals(4, AppSignatureVerifier.ALLOWED_SHA256_FINGERPRINTS.size)
+        official.forEach { fingerprint ->
+            assertTrue(
+                "Missing official fingerprint $fingerprint",
+                AppSignatureVerifier.ALLOWED_SHA256_FINGERPRINTS.contains(
+                    AppSignatureVerifier.normalizeFingerprint(fingerprint),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun eachOfficialFingerprintIsAcceptedIndividually() {
+        official.forEach { fingerprint ->
+            assertTrue(
+                "Official fingerprint rejected: $fingerprint",
+                AppSignatureVerifier.isSignatureTrusted(
+                    currentSigners = listOf(fingerprint),
+                    certificateHistory = emptyList(),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun hybridCoSigningAcceptsAllThreePlaySigningKeys() {
+        assertTrue(
+            AppSignatureVerifier.isSignatureTrusted(
+                currentSigners = listOf(play1, play2, play3),
+                certificateHistory = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun hybridCoSigningAcceptsTwoPlaySigningKeys() {
+        assertTrue(
+            AppSignatureVerifier.isSignatureTrusted(
+                currentSigners = listOf(play1, play2),
+                certificateHistory = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun mixedPlaySigningKeyAndUnknownIsRejected() {
+        assertFalse(
+            AppSignatureVerifier.isSignatureTrusted(
+                currentSigners = listOf(play1, unknown),
+                certificateHistory = emptyList(),
             ),
         )
     }

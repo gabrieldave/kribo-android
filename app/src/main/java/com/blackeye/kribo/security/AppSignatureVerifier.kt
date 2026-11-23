@@ -23,25 +23,23 @@ object AppSignatureVerifier {
     const val MASTER_SHA256 =
         "646D54D57FE2446D50AF43BF93572F9B3A3320C650D5B4B482F6FBC3438C3BCB"
 
-    /**
-     * Play App Signing fingerprints are added in Fase 5B (v1.0.10) after uploading this
-     * first .aab to Internal Testing. Keep the slots documented:
-     *
-     * const val PLAY_APP_SIGNING_SHA256_CLASSIC_ACTIVE = "<classic active SHA-256>"
-     * const val PLAY_APP_SIGNING_SHA256_POST_QUANTUM_ML_DSA_65 = "<ML-DSA-65 SHA-256>"
-     * const val PLAY_APP_SIGNING_SHA256_CLASSIC_PREVIOUS = "<previous classic SHA-256>"
-     */
-    private val PLAY_APP_SIGNING_SHA256: List<String> = listOf(
-        // PLAY_APP_SIGNING_SHA256_CLASSIC_ACTIVE,
-        // PLAY_APP_SIGNING_SHA256_POST_QUANTUM_ML_DSA_65,
-        // PLAY_APP_SIGNING_SHA256_CLASSIC_PREVIOUS,
-    )
+    // Google Play App Signing — official fingerprints for kribo-android v1.0.10+.
+    const val PLAY_APP_SIGNING_SHA256_1 =
+        "0B3BB3C5DA56FB10431EF28C056780CCA147E65DF7294FCB45EECA30C29AC2D1"
+    const val PLAY_APP_SIGNING_SHA256_2 =
+        "9F4AECDB28F14BCCC4FE8B5084644B755909DD97CFCC662DB3BA7731DD5C9FF1"
+    const val PLAY_APP_SIGNING_SHA256_3 =
+        "CCF5AE4289722C1D95D536A277C336A7ECD52B7D16C9E6075A1C2381A1E4CD7C"
 
-    val ALLOWED_SHA256_FINGERPRINTS: Set<String> =
-        (PLAY_APP_SIGNING_SHA256 + MASTER_SHA256)
-            .map(::normalizeFingerprint)
-            .filter { it.isNotEmpty() }
-            .toSet()
+    /** Exactly four official keys: BLACK EYE master/upload + the 3 Play signing keys. */
+    val ALLOWED_SHA256_FINGERPRINTS: Set<String> = setOf(
+        MASTER_SHA256,
+        PLAY_APP_SIGNING_SHA256_1,
+        PLAY_APP_SIGNING_SHA256_2,
+        PLAY_APP_SIGNING_SHA256_3,
+    ).map(::normalizeFingerprint)
+        .filter { it.isNotEmpty() }
+        .toSet()
 
     val trustedFingerprints: Set<String>
         get() = ALLOWED_SHA256_FINGERPRINTS
