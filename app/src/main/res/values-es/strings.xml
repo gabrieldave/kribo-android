@@ -192,6 +192,11 @@
     <string name="theme_short_paper">Papel</string>
     <string name="theme_short_obsidian">Obsidiana</string>
     <string name="theme_short_amoled">AMOLED</string>
+    <string name="theme_short_rose">Rosa</string>
+    <string name="theme_short_amber">Ámbar</string>
+    <string name="theme_short_emerald">Verde</string>
+    <string name="theme_short_ocean">Océano</string>
+    <string name="theme_short_violet">Violeta</string>
     <string name="language_auto_short">Auto</string>
     <string name="settings_theme_title">Tema</string>
     <string name="theme_obsidian">Obsidiana</string>

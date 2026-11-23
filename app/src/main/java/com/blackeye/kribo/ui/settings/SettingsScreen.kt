@@ -564,8 +564,13 @@ internal fun CompactAppearanceCard(
 private val COMPACT_THEMES = listOf(
     AppTheme.PURE_LIGHT,
     AppTheme.WARM_PAPER,
+    AppTheme.ROSE,
+    AppTheme.AMBER,
     AppTheme.OBSIDIAN,
     AppTheme.AMOLED,
+    AppTheme.EMERALD,
+    AppTheme.OCEAN,
+    AppTheme.VIOLET,
 )
 
 @Composable
@@ -574,7 +579,7 @@ private fun CompactThemeGrid(
     onThemeSelected: (AppTheme) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        COMPACT_THEMES.chunked(2).forEach { rowThemes ->
+        COMPACT_THEMES.chunked(3).forEach { rowThemes ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -603,7 +608,11 @@ private fun ThemeSwatchButton(
     val foreground = when (theme) {
         AppTheme.PURE_LIGHT -> Color(0xFF0D1117)
         AppTheme.WARM_PAPER -> Color(0xFF1C1917)
-        AppTheme.OBSIDIAN, AppTheme.AMOLED -> Color.White
+        AppTheme.ROSE -> Color(0xFF2B0B18)
+        AppTheme.AMBER -> Color(0xFF2A1A05)
+        AppTheme.OBSIDIAN, AppTheme.AMOLED,
+        AppTheme.EMERALD, AppTheme.OCEAN, AppTheme.VIOLET,
+        -> Color.White
     }
     val accent = Color(theme.previewAccent)
     val shape = RoundedCornerShape(12.dp)
@@ -730,8 +739,13 @@ private fun AppTheme.compactLabel(): String = stringResource(
     when (this) {
         AppTheme.PURE_LIGHT -> R.string.theme_short_light
         AppTheme.WARM_PAPER -> R.string.theme_short_paper
+        AppTheme.ROSE -> R.string.theme_short_rose
+        AppTheme.AMBER -> R.string.theme_short_amber
         AppTheme.OBSIDIAN -> R.string.theme_short_obsidian
         AppTheme.AMOLED -> R.string.theme_short_amoled
+        AppTheme.EMERALD -> R.string.theme_short_emerald
+        AppTheme.OCEAN -> R.string.theme_short_ocean
+        AppTheme.VIOLET -> R.string.theme_short_violet
     },
 )
 

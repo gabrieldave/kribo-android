@@ -16,6 +16,11 @@ enum class AppTheme(
     WARM_PAPER("warm_paper", true, 0xFFFAF8F5, 0xFF0099B8),
     AMOLED("amoled", false, 0xFF000000, 0xFF00D8FF),
     PURE_LIGHT("pure_light", true, 0xFFFFFFFF, 0xFF0088A8),
+    EMERALD("emerald", false, 0xFF071A12, 0xFF34D399),
+    OCEAN("ocean", false, 0xFF08111F, 0xFF38BDF8),
+    VIOLET("violet", false, 0xFF120A1F, 0xFFC084FC),
+    ROSE("rose", true, 0xFFFFF7FA, 0xFFDB2777),
+    AMBER("amber", true, 0xFFFFF9EE, 0xFFD97706),
     ;
 
     companion object {

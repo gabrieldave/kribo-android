@@ -187,8 +187,13 @@ class LayoutOverflowTest {
         val controls = listOf(
             "theme-pure_light",
             "theme-warm_paper",
+            "theme-rose",
+            "theme-amber",
             "theme-obsidian",
             "theme-amoled",
+            "theme-emerald",
+            "theme-ocean",
+            "theme-violet",
             "language-system",
             "language-spanish",
             "language-english",
@@ -202,8 +207,8 @@ class LayoutOverflowTest {
                         .fetchSemanticsNode().boundsInRoot
                     val cardHeightDp = card.height / TEST_DENSITY
                     assertTrue(
-                        "Appearance card is ${cardHeightDp}dp, expected <= 266.6dp",
-                        cardHeightDp <= 266.7f,
+                        "Appearance card is ${cardHeightDp}dp, expected <= 360dp for 9 themes",
+                        cardHeightDp <= 360f,
                     )
                 }
                 controls.forEach { tag -> assertControlFits(tag, fontScale) }

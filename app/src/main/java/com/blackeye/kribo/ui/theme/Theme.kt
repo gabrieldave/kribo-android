@@ -97,6 +97,111 @@ private val PureLightColors = lightColorScheme(
     onError = KriboWhite,
 )
 
+private val EmeraldColors = darkColorScheme(
+    primary = Color(0xFF34D399),
+    onPrimary = Color(0xFF04231A),
+    primaryContainer = Color(0xFF0F3D2A),
+    onPrimaryContainer = Color(0xFFD1FAE5),
+    secondary = Color(0xFF6EE7B7),
+    onSecondary = Color(0xFF04231A),
+    secondaryContainer = Color(0xFF103A2A),
+    onSecondaryContainer = Color(0xFFA7F3D0),
+    background = Color(0xFF071A12),
+    onBackground = Color(0xFFE6FFF4),
+    surface = Color(0xFF0E2419),
+    onSurface = Color(0xFFE6FFF4),
+    surfaceVariant = Color(0xFF143024),
+    onSurfaceVariant = Color(0xFF9CCFB8),
+    outline = Color(0xFF1F4433),
+    outlineVariant = Color(0xFF1F4433),
+    error = KriboErrorDark,
+    onError = Color(0xFF2B0000),
+)
+
+private val OceanColors = darkColorScheme(
+    primary = Color(0xFF38BDF8),
+    onPrimary = Color(0xFF002233),
+    primaryContainer = Color(0xFF0B3A52),
+    onPrimaryContainer = Color(0xFFE0F2FE),
+    secondary = Color(0xFF7DD3FC),
+    onSecondary = Color(0xFF002233),
+    secondaryContainer = Color(0xFF0E3348),
+    onSecondaryContainer = Color(0xFFBAE6FD),
+    background = Color(0xFF08111F),
+    onBackground = Color(0xFFEAF6FF),
+    surface = Color(0xFF0F1B2D),
+    onSurface = Color(0xFFEAF6FF),
+    surfaceVariant = Color(0xFF16263D),
+    onSurfaceVariant = Color(0xFF9FB6CF),
+    outline = Color(0xFF243B57),
+    outlineVariant = Color(0xFF243B57),
+    error = KriboErrorDark,
+    onError = Color(0xFF2B0000),
+)
+
+private val VioletColors = darkColorScheme(
+    primary = Color(0xFFC084FC),
+    onPrimary = Color(0xFF2A0B45),
+    primaryContainer = Color(0xFF3B1D5A),
+    onPrimaryContainer = Color(0xFFF3E8FF),
+    secondary = Color(0xFFD8B4FE),
+    onSecondary = Color(0xFF2A0B45),
+    secondaryContainer = Color(0xFF33204D),
+    onSecondaryContainer = Color(0xFFE9D5FF),
+    background = Color(0xFF120A1F),
+    onBackground = Color(0xFFF6EDFF),
+    surface = Color(0xFF1B102B),
+    onSurface = Color(0xFFF6EDFF),
+    surfaceVariant = Color(0xFF26163B),
+    onSurfaceVariant = Color(0xFFC0A8D8),
+    outline = Color(0xFF3A2455),
+    outlineVariant = Color(0xFF3A2455),
+    error = KriboErrorDark,
+    onError = Color(0xFF2B0000),
+)
+
+private val RoseColors = lightColorScheme(
+    primary = Color(0xFFDB2777),
+    onPrimary = KriboWhite,
+    primaryContainer = Color(0xFFFCE7F3),
+    onPrimaryContainer = Color(0xFF500724),
+    secondary = Color(0xFFEC4899),
+    onSecondary = KriboWhite,
+    secondaryContainer = Color(0xFFFCE7F3),
+    onSecondaryContainer = Color(0xFF831843),
+    background = Color(0xFFFFF7FA),
+    onBackground = Color(0xFF2B0B18),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF2B0B18),
+    surfaceVariant = Color(0xFFFCE7EF),
+    onSurfaceVariant = Color(0xFF7A4A5D),
+    outline = Color(0xFFF3D3DF),
+    outlineVariant = Color(0xFFF3D3DF),
+    error = KriboLightError,
+    onError = KriboWhite,
+)
+
+private val AmberColors = lightColorScheme(
+    primary = Color(0xFFD97706),
+    onPrimary = KriboWhite,
+    primaryContainer = Color(0xFFFEF3C7),
+    onPrimaryContainer = Color(0xFF451A03),
+    secondary = Color(0xFFF59E0B),
+    onSecondary = Color(0xFF2A1A05),
+    secondaryContainer = Color(0xFFFEF3C7),
+    onSecondaryContainer = Color(0xFF78350F),
+    background = Color(0xFFFFF9EE),
+    onBackground = Color(0xFF2A1A05),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF2A1A05),
+    surfaceVariant = Color(0xFFFCEFD5),
+    onSurfaceVariant = Color(0xFF7A5A2E),
+    outline = Color(0xFFF0DFC0),
+    outlineVariant = Color(0xFFF0DFC0),
+    error = KriboLightError,
+    onError = KriboWhite,
+)
+
 @Composable
 fun KriboTheme(
     theme: AppTheme = AppTheme.OBSIDIAN,
@@ -107,6 +212,11 @@ fun KriboTheme(
         AppTheme.WARM_PAPER -> WarmPaperColors
         AppTheme.AMOLED -> AmoledColors
         AppTheme.PURE_LIGHT -> PureLightColors
+        AppTheme.EMERALD -> EmeraldColors
+        AppTheme.OCEAN -> OceanColors
+        AppTheme.VIOLET -> VioletColors
+        AppTheme.ROSE -> RoseColors
+        AppTheme.AMBER -> AmberColors
     }
 
     val view = LocalView.current
