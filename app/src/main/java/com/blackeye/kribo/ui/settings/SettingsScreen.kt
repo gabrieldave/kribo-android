@@ -98,6 +98,7 @@ fun SettingsScreen(
     onRestorePurchases: (onResult: (Boolean) -> Unit) -> Unit,
     onLicenses: () -> Unit,
     onOpenWifi: () -> Unit,
+    onOpenDrive: () -> Unit,
 ) {
     val context = LocalContext.current
     var connectionsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -215,7 +216,14 @@ fun SettingsScreen(
                     ConnectionRow(
                         icon = Icons.Rounded.Cloud,
                         title = stringResource(R.string.settings_connection_drive),
-                        badge = stringResource(R.string.settings_coming_soon),
+                        locked = !isPro,
+                        onClick = {
+                            if (isPro) {
+                                onOpenDrive()
+                            } else {
+                                paywallReason = PaywallReason.DRIVE_LOCKED
+                            }
+                        },
                     )
                     SettingsDivider()
                     ConnectionRow(

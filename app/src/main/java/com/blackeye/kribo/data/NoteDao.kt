@@ -2,6 +2,7 @@ package com.blackeye.kribo.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,9 @@ interface NoteDao {
 
     @Insert
     suspend fun insert(note: NoteEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(note: NoteEntity): Long
 
     @Update
     suspend fun update(note: NoteEntity)

@@ -17,6 +17,8 @@ serialization = "1.9.0"
 onnxruntime = "1.24.3"
 mlkitDocScanner = "16.0.0"
 mlkitTextRecognition = "16.0.1"
+playServicesAuth = "21.6.0"
+workManager = "2.11.2"
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 coroutinesTest = "1.10.2"
@@ -55,6 +57,8 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 mlkit-document-scanner = { group = "com.google.android.gms", name = "play-services-mlkit-document-scanner", version.ref = "mlkitDocScanner" }
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }

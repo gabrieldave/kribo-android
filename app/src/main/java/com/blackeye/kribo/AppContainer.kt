@@ -5,6 +5,14 @@ import com.blackeye.kribo.billing.BillingManager
 import com.blackeye.kribo.billing.EntitlementRepository
 import com.blackeye.kribo.data.KriboDatabase
 import com.blackeye.kribo.data.NoteRepository
+import com.blackeye.kribo.drive.DriveApiClient
+import com.blackeye.kribo.drive.DriveAuthManager
+import com.blackeye.kribo.drive.DrivePrefs
+import com.blackeye.kribo.drive.DriveSessionStore
+import com.blackeye.kribo.drive.DriveSyncManager
+import com.blackeye.kribo.drive.DriveSyncScheduler
+import com.blackeye.kribo.drive.DriveTombstoneStore
+import com.blackeye.kribo.drive.HttpDriveApiClient
 import com.blackeye.kribo.importexport.ExportService
 import com.blackeye.kribo.importexport.ImportService
 import com.blackeye.kribo.ocr.AttachmentStore
@@ -32,7 +40,13 @@ class AppContainer(context: Context) {
 
     val attachmentStore: AttachmentStore by lazy { AttachmentStore(attachmentsRoot) }
 
-    val noteRepository: NoteRepository by lazy { NoteRepository(database, attachmentsRoot) }
+    val driveTombstones: DriveTombstoneStore by lazy { DriveTombstoneStore(secureStore) }
+
+    val noteRepository: NoteRepository by lazy {
+        NoteRepository(database, attachmentsRoot) { noteId, deletedAt ->
+            driveTombstones.mark(noteId, deletedAt)
+        }
+    }
 
     val importService: ImportService by lazy {
         ImportService(noteRepository, attachmentStore)
@@ -62,6 +76,28 @@ class AppContainer(context: Context) {
     val wifiTransferServer: WifiTransferServer by lazy {
         WifiTransferServer(appContext, noteRepository, exportService)
     }
+
+    val drivePrefs by lazy { DrivePrefs(appContext) }
+
+    val driveSessionStore by lazy { DriveSessionStore(secureStore) }
+
+    val driveAuthManager by lazy { DriveAuthManager(appContext, driveSessionStore) }
+
+    val driveApiClient: DriveApiClient by lazy {
+        HttpDriveApiClient { driveAuthManager.validToken() }
+    }
+
+    val driveSyncManager: DriveSyncManager by lazy {
+        DriveSyncManager(
+            repository = noteRepository,
+            attachmentStore = attachmentStore,
+            api = driveApiClient,
+            tombstones = driveTombstones,
+            auth = driveAuthManager,
+        )
+    }
+
+    val driveSyncScheduler by lazy { DriveSyncScheduler(appContext, drivePrefs) }
 
     /** UI-only preferences (theme + home layout); never touches Room, OCR or secure storage. */
     val uiPreferences: UiPreferences by lazy { UiPreferences(appContext) }

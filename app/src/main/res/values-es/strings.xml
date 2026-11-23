@@ -34,7 +34,6 @@
     <string name="search_no_notes">Escribe tu primera nota para poder buscarla aquí.</string>
 
     <string name="scan_title">Escanear</string>
-    <string name="scan_badge">Próximamente</string>
     <string name="scan_headline">Motor OCR sin conexión</string>
     <string name="scan_body">El motor ScanOffline se carga solo cuando escaneas. Ningún dato sale de tu dispositivo.</string>
     <string name="scan_cta">Escanear documento</string>
@@ -51,7 +50,6 @@
     <string name="settings_connections_subtitle">Sincronización y respaldo</string>
     <string name="settings_connection_drive">Sincronización con Google Drive</string>
     <string name="settings_connection_wifi">Transferencia por Wi-Fi</string>
-    <string name="settings_coming_soon">Próximamente</string>
 
     <string name="settings_section_pro">Kribo Pro</string>
     <string name="settings_pro_title">Kribo Pro</string>
@@ -210,6 +208,31 @@
     <string name="wifi_start_failed">No se pudo iniciar el servidor. Inténtalo de nuevo o revisa la Wi-Fi.</string>
     <string name="wifi_explanation">Solo funciona mientras esta pantalla está abierta. Tus notas no salen de tu red local.</string>
     <string name="cd_wifi_toggle">Iniciar o detener transferencia</string>
+
+    <string name="paywall_reason_drive">Sincroniza tus notas con Google Drive</string>
+    <string name="drive_sync_title">Sincronización con Google Drive</string>
+    <string name="drive_privacy_body">Kribo solo accede a su propia carpeta privada en tu Drive. Nunca ve tus demás archivos.</string>
+    <string name="drive_account_google">Google Drive</string>
+    <string name="drive_connect">Conectar Google Drive</string>
+    <string name="drive_connected_account">Cuenta conectada</string>
+    <string name="drive_last_sync">Último respaldo: %1$s</string>
+    <string name="drive_never_synced">Aún no se ha respaldado</string>
+    <string name="drive_sync_counts">%1$d notas · %2$d adjuntos</string>
+    <string name="drive_sync_now">Sincronizar ahora</string>
+    <string name="drive_syncing">Sincronizando…</string>
+    <string name="drive_auto_sync">Sincronización automática</string>
+    <string name="drive_auto_sync_body">Cada 6 horas en segundo plano</string>
+    <string name="drive_wifi_only">Solo con Wi-Fi</string>
+    <string name="drive_wifi_only_body">Nunca usa datos móviles</string>
+    <string name="drive_disconnect">Desconectar</string>
+    <string name="drive_disconnect_title">¿Desconectar Google Drive?</string>
+    <string name="drive_disconnect_body">Tus notas seguirán en este teléfono. Puedes volver a conectar cuando quieras.</string>
+    <string name="drive_message_done">Sincronización completada.</string>
+    <string name="drive_message_cancelled">Autorización cancelada.</string>
+    <string name="drive_message_network">No hay conexión con Google Drive. Tus notas locales están a salvo.</string>
+    <string name="drive_message_auth">Vuelve a conectar Google Drive para continuar.</string>
+    <string name="drive_message_config">La configuración OAuth aún no está lista. Revisa el SHA-1 de firma de la app.</string>
+    <string name="drive_message_unknown">No se pudo sincronizar. Inténtalo de nuevo.</string>
 
     <string name="settings_section_data">Datos</string>
     <string name="settings_import_title">Importar notas</string>

@@ -381,7 +381,7 @@ fun EmptyStateCard(
     }
 }
 
-/** Small uppercase status pill, used for OCR / "Coming soon" labels. */
+/** Small uppercase status pill, used for OCR and task labels. */
 @Composable
 fun StatusPill(text: String, modifier: Modifier = Modifier) {
     Surface(

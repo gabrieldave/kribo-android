@@ -46,8 +46,8 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -163,6 +163,8 @@ dependencies {
     implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.document.scanner)
     implementation(libs.mlkit.text.recognition)
+    implementation(libs.play.services.auth)
+    implementation(libs.androidx.work.runtime.ktx)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 

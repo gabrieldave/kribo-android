@@ -10,6 +10,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val LICENSES = "licenses"
     const val WIFI = "wifi-transfer"
+    const val DRIVE = "drive-sync"
 
     fun noteEdit(id: Long, query: String = ""): String =
         "note/$id?$QUERY_ARG=${Uri.encode(query)}"

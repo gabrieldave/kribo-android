@@ -24,6 +24,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.ui.billing.PaywallReason
 import com.blackeye.kribo.ui.billing.ProPaywallContent
+import com.blackeye.kribo.ui.drive.DriveSyncContent
+import com.blackeye.kribo.ui.drive.DriveSyncMessage
 import com.blackeye.kribo.ui.home.QuickCaptureBar
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.settings.AppLanguage
@@ -298,6 +300,97 @@ class LayoutOverflowTest {
                 compose.waitForIdle()
                 assertControlFits("wifi-toggle", fontScale)
                 assertControlFits("wifi-copy", fontScale)
+            }
+        }
+    }
+
+    @Test
+    fun driveSyncDisconnectedFits360Dp() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        DriveSyncContent(
+                            connected = false,
+                            email = null,
+                            lastSyncAt = 0L,
+                            notes = 0,
+                            attachments = 0,
+                            syncing = false,
+                            autoSync = false,
+                            wifiOnly = true,
+                            message = null,
+                            onConnect = {},
+                            onSync = {},
+                            onAutoChange = {},
+                            onWifiChange = {},
+                            onDisconnect = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                assertControlFits("drive-connect", fontScale)
+            }
+        }
+    }
+
+    @Test
+    fun driveSyncConnectedFits360Dp() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        DriveSyncContent(
+                            connected = true,
+                            email = "cuenta@example.com",
+                            lastSyncAt = 1_700_000_000_000L,
+                            notes = 12,
+                            attachments = 4,
+                            syncing = false,
+                            autoSync = true,
+                            wifiOnly = true,
+                            message = DriveSyncMessage.DONE,
+                            onConnect = {},
+                            onSync = {},
+                            onAutoChange = {},
+                            onWifiChange = {},
+                            onDisconnect = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                assertControlFits("drive-sync-now", fontScale)
+                assertControlFits("drive-auto", fontScale)
+                assertControlFits("drive-wifi", fontScale)
+                assertControlFits("drive-disconnect", fontScale)
             }
         }
     }

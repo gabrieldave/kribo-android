@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 class NoteRepository(
     private val database: KriboDatabase,
     private val attachmentsRoot: File,
+    private val onNoteDeleted: ((noteId: Long, deletedAt: Long) -> Unit)? = null,
 ) {
     private val noteDao = database.noteDao()
     private val folderDao = database.folderDao()
@@ -94,6 +95,35 @@ class NoteRepository(
         return id
     }
 
+    /** Used by Drive sync to restore a remote note with its original id and timestamp. */
+    suspend fun upsertSyncedNote(
+        noteId: Long,
+        folderId: Long?,
+        title: String,
+        blocks: List<NoteBlock>,
+        updatedAt: Long,
+        remoteOcrText: String = "",
+    ) {
+        val existing = noteDao.getById(noteId)
+        val attachmentText = attachmentDao.getForNote(noteId)
+            .mapNotNull { it.extractedText.takeIf(String::isNotBlank) }
+            .joinToString(separator = "\n")
+        val cleanTitle = title.ifBlank { BlockCodec.derivedTitle(blocks) }.take(120)
+        noteDao.upsert(
+            NoteEntity(
+                id = noteId,
+                folderId = folderId,
+                title = cleanTitle,
+                blocksJson = BlockCodec.encode(blocks),
+                plainTextIndex = BlockCodec.plainText(blocks),
+                ocrTextIndex = attachmentText.ifBlank { remoteOcrText },
+                isPinned = existing?.isPinned ?: false,
+                createdAt = existing?.createdAt ?: updatedAt,
+                updatedAt = updatedAt,
+            ),
+        )
+    }
+
     suspend fun refreshOcrIndex(noteId: Long) {
         val existing = noteDao.getById(noteId) ?: return
         val ocrText = attachmentDao.getForNote(noteId)
@@ -122,6 +152,7 @@ class NoteRepository(
     }
 
     suspend fun deleteNote(noteId: Long) {
+        onNoteDeleted?.invoke(noteId, System.currentTimeMillis())
         attachmentDao.deleteForNote(noteId)
         noteDao.deleteById(noteId)
         File(attachmentsRoot, noteId.toString()).deleteRecursively()

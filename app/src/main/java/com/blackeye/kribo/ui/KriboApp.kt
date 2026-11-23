@@ -14,6 +14,7 @@ import com.blackeye.kribo.billing.BillingUiState
 import com.blackeye.kribo.ui.home.HomeScreen
 import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.note.NoteEditorScreen
+import com.blackeye.kribo.ui.drive.DriveSyncScreen
 import com.blackeye.kribo.ui.settings.LicensesScreen
 import com.blackeye.kribo.ui.transfer.WifiTransferScreen
 import com.blackeye.kribo.ui.settings.SettingsScreen
@@ -80,6 +81,7 @@ fun KriboApp(
                 onRestorePurchases = { callback -> container.entitlementRepository.restore(callback) },
                 onLicenses = { navController.navigate(Routes.LICENSES) },
                 onOpenWifi = { navController.navigate(Routes.WIFI) },
+                onOpenDrive = { navController.navigate(Routes.DRIVE) },
             )
         }
 
@@ -89,6 +91,13 @@ fun KriboApp(
 
         composable(Routes.WIFI) {
             WifiTransferScreen(
+                container = container,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.DRIVE) {
+            DriveSyncScreen(
                 container = container,
                 onBack = { navController.popBackStack() },
             )

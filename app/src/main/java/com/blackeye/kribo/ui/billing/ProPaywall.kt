@@ -193,5 +193,6 @@ private fun reasonText(reason: PaywallReason): Int = when (reason) {
     PaywallReason.THEME_LOCKED -> R.string.paywall_reason_theme
     PaywallReason.BACKUP_LOCKED -> R.string.paywall_reason_backup
     PaywallReason.WIFI_LOCKED -> R.string.paywall_reason_wifi
+    PaywallReason.DRIVE_LOCKED -> R.string.paywall_reason_drive
     PaywallReason.GENERIC -> R.string.paywall_reason_generic
 }

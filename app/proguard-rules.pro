@@ -50,3 +50,8 @@
 
 # Keep the local signature allow-list even if reflection is used by CI tooling.
 -keep class com.blackeye.kribo.security.AppSignatureVerifier { *; }
+
+# Drive sync: WorkManager instantiates the worker by name; serializers are reflective.
+-keep class com.blackeye.kribo.drive.DriveSyncWorker { *; }
+-keep class com.blackeye.kribo.drive.**$$serializer { *; }
+-keepclassmembers class com.blackeye.kribo.drive.** { *** Companion; }

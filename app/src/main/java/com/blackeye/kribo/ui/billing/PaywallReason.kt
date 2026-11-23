@@ -8,5 +8,6 @@ enum class PaywallReason {
     THEME_LOCKED,
     BACKUP_LOCKED,
     WIFI_LOCKED,
+    DRIVE_LOCKED,
     GENERIC,
 }
