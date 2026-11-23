@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Star
@@ -52,6 +53,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,6 +74,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blackeye.kribo.BuildConfig
 import com.blackeye.kribo.R
 import com.blackeye.kribo.billing.BillingUiState
+import com.blackeye.kribo.billing.ProLimits
+import com.blackeye.kribo.ui.billing.PaywallReason
+import com.blackeye.kribo.ui.billing.ProPaywallSheet
 import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
@@ -87,14 +92,20 @@ fun SettingsScreen(
     billingState: BillingUiState,
     library: LibraryViewModel,
     uiPreferences: UiPreferences,
+    isPro: Boolean,
     onBack: () -> Unit,
     onPurchase: () -> Unit,
-    onRestorePurchases: () -> Unit,
+    onRestorePurchases: (onResult: (Boolean) -> Unit) -> Unit,
     onLicenses: () -> Unit,
+    onOpenWifi: () -> Unit,
 ) {
     val context = LocalContext.current
     var connectionsExpanded by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    var paywallReason by remember { mutableStateOf<PaywallReason?>(null) }
+    var proRestoreMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val restoreFound = stringResource(R.string.paywall_restore_found)
+    val restoreNotFound = stringResource(R.string.paywall_restore_not_found)
     val selectedLanguage = AppLanguage.current()
     val selectedTheme by uiPreferences.theme.collectAsStateWithLifecycle()
     val importState by library.importState.collectAsStateWithLifecycle()
@@ -123,8 +134,10 @@ fun SettingsScreen(
         CompactAppearanceCard(
             selectedTheme = selectedTheme,
             selectedLanguage = selectedLanguage,
+            isPro = isPro,
             onThemeSelected = { uiPreferences.setTheme(it) },
             onLanguageSelected = { AppLanguage.apply(it) },
+            onLockedTheme = { paywallReason = PaywallReason.THEME_LOCKED },
         )
 
         SectionLabel(stringResource(R.string.settings_section_data))
@@ -140,8 +153,13 @@ fun SettingsScreen(
                 icon = Icons.Rounded.Archive,
                 title = stringResource(R.string.settings_backup_title),
                 subtitle = stringResource(R.string.settings_backup_subtitle),
+                locked = !isPro,
                 onClick = {
-                    backupLauncher.launch("kribo-backup-${System.currentTimeMillis()}.zip")
+                    if (ProLimits.canExportBackup(isPro)) {
+                        backupLauncher.launch("kribo-backup-${System.currentTimeMillis()}.zip")
+                    } else {
+                        paywallReason = PaywallReason.BACKUP_LOCKED
+                    }
                 },
             )
         }
@@ -149,8 +167,14 @@ fun SettingsScreen(
         SectionLabel(stringResource(R.string.settings_section_pro))
         ProCard(
             billingState = billingState,
+            isPro = isPro,
             onPurchase = onPurchase,
-            onRestorePurchases = onRestorePurchases,
+            onRestorePurchases = {
+                onRestorePurchases { owned ->
+                    proRestoreMessage = if (owned) restoreFound else restoreNotFound
+                }
+            },
+            restoreMessage = proRestoreMessage,
         )
 
         SectionLabel(stringResource(R.string.settings_section_integrations))
@@ -191,11 +215,20 @@ fun SettingsScreen(
                     ConnectionRow(
                         icon = Icons.Rounded.Cloud,
                         title = stringResource(R.string.settings_connection_drive),
+                        badge = stringResource(R.string.settings_coming_soon),
                     )
                     SettingsDivider()
                     ConnectionRow(
                         icon = Icons.Rounded.Wifi,
                         title = stringResource(R.string.settings_connection_wifi),
+                        locked = !isPro,
+                        onClick = {
+                            if (ProLimits.canUseWifi(isPro)) {
+                                onOpenWifi()
+                            } else {
+                                paywallReason = PaywallReason.WIFI_LOCKED
+                            }
+                        },
                     )
                 }
             }
@@ -274,6 +307,19 @@ fun SettingsScreen(
                 },
             )
         }
+    }
+
+    paywallReason?.let { reason ->
+        ProPaywallSheet(
+            reason = reason,
+            price = billingState.formattedPrice,
+            onDismiss = { paywallReason = null },
+            onPurchase = {
+                paywallReason = null
+                onPurchase()
+            },
+            onRestore = onRestorePurchases,
+        )
     }
 
     when (importState.phase) {
@@ -491,6 +537,7 @@ private fun SettingsActionRow(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
+    locked: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -511,8 +558,8 @@ private fun SettingsActionRow(
             )
         }
         Icon(
-            imageVector = Icons.Rounded.ChevronRight,
-            contentDescription = null,
+            imageVector = if (locked) Icons.Rounded.Lock else Icons.Rounded.ChevronRight,
+            contentDescription = if (locked) stringResource(R.string.cd_pro_feature) else null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -522,8 +569,10 @@ private fun SettingsActionRow(
 internal fun CompactAppearanceCard(
     selectedTheme: AppTheme,
     selectedLanguage: AppLanguage,
+    isPro: Boolean,
     onThemeSelected: (AppTheme) -> Unit,
     onLanguageSelected: (AppLanguage) -> Unit,
+    onLockedTheme: () -> Unit,
 ) {
     SettingsCard {
         Column(
@@ -540,7 +589,9 @@ internal fun CompactAppearanceCard(
             Spacer(Modifier.height(8.dp))
             CompactThemeGrid(
                 selectedTheme = selectedTheme,
+                isPro = isPro,
                 onThemeSelected = onThemeSelected,
+                onLockedTheme = onLockedTheme,
             )
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(
@@ -576,7 +627,9 @@ private val COMPACT_THEMES = listOf(
 @Composable
 private fun CompactThemeGrid(
     selectedTheme: AppTheme,
+    isPro: Boolean,
     onThemeSelected: (AppTheme) -> Unit,
+    onLockedTheme: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         COMPACT_THEMES.chunked(3).forEach { rowThemes ->
@@ -585,10 +638,14 @@ private fun CompactThemeGrid(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 rowThemes.forEach { theme ->
+                    val locked = !isPro && theme in ProLimits.PRO_THEMES
                     ThemeSwatchButton(
                         theme = theme,
                         selected = theme == selectedTheme,
-                        onClick = { onThemeSelected(theme) },
+                        locked = locked,
+                        onClick = {
+                            if (locked) onLockedTheme() else onThemeSelected(theme)
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -601,6 +658,7 @@ private fun CompactThemeGrid(
 private fun ThemeSwatchButton(
     theme: AppTheme,
     selected: Boolean,
+    locked: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -649,7 +707,15 @@ private fun ThemeSwatchButton(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (selected) {
+            if (locked) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Rounded.Lock,
+                    contentDescription = stringResource(R.string.cd_pro_feature),
+                    tint = accent,
+                    modifier = Modifier.size(15.dp),
+                )
+            } else if (selected) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Rounded.Check,
@@ -761,8 +827,10 @@ private fun AppLanguage.compactLabel(): String = stringResource(
 @Composable
 private fun ProCard(
     billingState: BillingUiState,
+    isPro: Boolean,
     onPurchase: () -> Unit,
     onRestorePurchases: () -> Unit,
+    restoreMessage: String? = null,
 ) {
     SettingsCard {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -784,7 +852,7 @@ private fun ProCard(
 
             Spacer(Modifier.height(16.dp))
 
-            if (billingState.owned) {
+            if (isPro) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -827,7 +895,20 @@ private fun ProCard(
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),
                 ) {
-                    Text(stringResource(R.string.settings_pro_restore))
+                    Text(
+                        text = stringResource(R.string.settings_pro_restore),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (restoreMessage != null) {
+                    Text(
+                        text = restoreMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
         }
@@ -838,11 +919,21 @@ private fun ProCard(
 private fun ConnectionRow(
     icon: ImageVector,
     title: String,
+    badge: String? = null,
+    locked: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -858,7 +949,25 @@ private fun ConnectionRow(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
-        StatusPill(text = stringResource(R.string.settings_coming_soon))
+        when {
+            locked -> Icon(
+                imageVector = Icons.Rounded.Lock,
+                contentDescription = stringResource(R.string.cd_pro_feature),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+
+            badge != null -> StatusPill(text = badge)
+
+            onClick != null -> Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

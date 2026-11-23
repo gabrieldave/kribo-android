@@ -22,6 +22,7 @@ data class BillingUiState(
     val connected: Boolean = false,
     val formattedPrice: String? = null,
     val owned: Boolean = false,
+    val resolved: Boolean = false,
     val message: String? = null,
 )
 
@@ -32,14 +33,15 @@ data class BillingUiState(
  * - Refreshes purchases and acknowledges them on every onResume (see MainActivity).
  * - Fails gracefully when Play is not available (debug builds, sideloaded APKs, no network).
  */
-class BillingManager(context: Context) {
+class BillingManager(context: Context) : BillingSource {
 
     private val appContext = context.applicationContext
     private val _state = MutableStateFlow(BillingUiState())
-    val state: StateFlow<BillingUiState> = _state.asStateFlow()
+    override val state: StateFlow<BillingUiState> = _state.asStateFlow()
 
     private var billingClient: BillingClient? = null
     private var proProduct: ProductDetails? = null
+    private var pendingRestore: ((Boolean) -> Unit)? = null
 
     private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
         when {
@@ -59,9 +61,13 @@ class BillingManager(context: Context) {
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                 _state.update { it.copy(connected = true) }
                 queryProducts()
-                queryPurchases()
+                val restore = pendingRestore
+                pendingRestore = null
+                if (restore != null) queryPurchases(restore) else queryPurchases()
             } else {
                 _state.update { it.copy(connected = false) }
+                pendingRestore?.invoke(false)
+                pendingRestore = null
             }
         }
 
@@ -79,7 +85,7 @@ class BillingManager(context: Context) {
     }
 
     /** Safe to call from onResume; reconnects if needed and re-queries entitlements. */
-    fun refresh() {
+    override fun refresh() {
         val client = billingClient
         if (client == null) {
             start()
@@ -93,7 +99,7 @@ class BillingManager(context: Context) {
         queryPurchases()
     }
 
-    fun launchPurchase(activity: Activity) {
+    override fun launchPurchase(activity: Activity) {
         val client = billingClient ?: return
         val product = proProduct ?: return
         if (!client.isReady) return
@@ -107,6 +113,16 @@ class BillingManager(context: Context) {
             )
             .build()
         client.launchBillingFlow(activity, params)
+    }
+
+    override fun restore(onResult: (Boolean) -> Unit) {
+        val client = billingClient ?: buildClient().also { billingClient = it }
+        if (client.isReady) {
+            queryPurchases(onResult)
+        } else {
+            pendingRestore = onResult
+            client.startConnection(connectionListener)
+        }
     }
 
     private fun buildClient(): BillingClient =
@@ -145,7 +161,7 @@ class BillingManager(context: Context) {
         }
     }
 
-    private fun queryPurchases() {
+    private fun queryPurchases(onResult: ((Boolean) -> Unit)? = null) {
         val client = billingClient ?: return
         if (!client.isReady) return
         val params = QueryPurchasesParams.newBuilder()
@@ -160,7 +176,10 @@ class BillingManager(context: Context) {
                 purchases
                     .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
                     .forEach(::acknowledge)
-                _state.update { it.copy(owned = owned, connected = true) }
+                _state.update { it.copy(owned = owned, connected = true, resolved = true) }
+                onResult?.invoke(owned)
+            } else {
+                onResult?.invoke(false)
             }
         }
     }
@@ -168,7 +187,7 @@ class BillingManager(context: Context) {
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
         if (!purchase.products.contains(PRO_PRODUCT_ID)) return
-        _state.update { it.copy(owned = true) }
+        _state.update { it.copy(owned = true, resolved = true) }
         acknowledge(purchase)
     }
 
@@ -186,6 +205,6 @@ class BillingManager(context: Context) {
     }
 
     companion object {
-        const val PRO_PRODUCT_ID = "kribo_pro"
+        const val PRO_PRODUCT_ID = "kribo_pro_lifetime"
     }
 }

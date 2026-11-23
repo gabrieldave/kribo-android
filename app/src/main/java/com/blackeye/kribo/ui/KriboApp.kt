@@ -15,12 +15,14 @@ import com.blackeye.kribo.ui.home.HomeScreen
 import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.note.NoteEditorScreen
 import com.blackeye.kribo.ui.settings.LicensesScreen
+import com.blackeye.kribo.ui.transfer.WifiTransferScreen
 import com.blackeye.kribo.ui.settings.SettingsScreen
 
 @Composable
 fun KriboApp(
     container: AppContainer,
     billingState: BillingUiState,
+    isPro: Boolean,
     onPurchase: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -74,13 +76,22 @@ fun KriboApp(
                 uiPreferences = container.uiPreferences,
                 onBack = { navController.popBackStack() },
                 onPurchase = onPurchase,
-                onRestorePurchases = container.billingManager::refresh,
+                isPro = isPro,
+                onRestorePurchases = { callback -> container.entitlementRepository.restore(callback) },
                 onLicenses = { navController.navigate(Routes.LICENSES) },
+                onOpenWifi = { navController.navigate(Routes.WIFI) },
             )
         }
 
         composable(Routes.LICENSES) {
             LicensesScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.WIFI) {
+            WifiTransferScreen(
+                container = container,
+                onBack = { navController.popBackStack() },
+            )
         }
     }
 }

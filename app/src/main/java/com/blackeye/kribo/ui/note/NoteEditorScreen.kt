@@ -115,10 +115,15 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.blackeye.kribo.AppContainer
+import com.blackeye.kribo.billing.ProLimits
+import com.blackeye.kribo.ui.billing.PaywallReason
+import com.blackeye.kribo.ui.billing.ProPaywallSheet
+import com.blackeye.kribo.ui.common.findActivity
 import com.blackeye.kribo.R
 import com.blackeye.kribo.data.AttachmentEntity
 import com.blackeye.kribo.data.FolderEntity
@@ -166,6 +171,8 @@ fun NoteEditorScreen(
     val attachmentMap = remember(viewModel.attachments) {
         viewModel.attachments.associateBy { it.id }
     }
+    val isPro by container.entitlementRepository.isPro.collectAsStateWithLifecycle()
+    val billingState by container.billingManager.state.collectAsStateWithLifecycle()
     val titleBlock = blocks.filterIsInstance<TitleBlock>()
         .firstOrNull { it.text.isNotBlank() }
         ?.text
@@ -180,6 +187,15 @@ fun NoteEditorScreen(
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showFolderPicker by remember { mutableStateOf(false) }
+    var paywallReason by remember { mutableStateOf<PaywallReason?>(null) }
+    val manualPhotoCount = blocks.count { it is AttachmentBlock && it.manual }
+    val requestImage: (Uri) -> Unit = { uri ->
+        if (ProLimits.canAttachManualPhoto(manualPhotoCount, isPro)) {
+            viewModel.addImage(uri, context.contentResolver)
+        } else {
+            paywallReason = PaywallReason.PHOTO_LIMIT
+        }
+    }
 
     val activeBlock = blocks.firstOrNull { it.id == viewModel.focusedBlockId }
     val folderLabel = viewModel.folders.firstOrNull { it.id == viewModel.folderId }?.name
@@ -194,7 +210,7 @@ fun NoteEditorScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
     ) { uri ->
-        if (uri != null) viewModel.addImage(uri, context.contentResolver)
+        if (uri != null) requestImage(uri)
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -202,9 +218,7 @@ fun NoteEditorScreen(
     ) { success ->
         val uri = cameraUri
         cameraUri = null
-        if (success && uri != null) {
-            viewModel.addImage(uri, context.contentResolver)
-        }
+        if (success && uri != null) requestImage(uri)
     }
 
     val launchCamera: () -> Unit = {
@@ -536,6 +550,19 @@ fun NoteEditorScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+
+    paywallReason?.let { reason ->
+        ProPaywallSheet(
+            reason = reason,
+            price = billingState.formattedPrice,
+            onDismiss = { paywallReason = null },
+            onPurchase = {
+                paywallReason = null
+                context.findActivity()?.let { container.entitlementRepository.launchPurchase(it) }
+            },
+            onRestore = { callback -> container.entitlementRepository.restore(callback) },
+        )
     }
 
     if (viewModel.imageError) {

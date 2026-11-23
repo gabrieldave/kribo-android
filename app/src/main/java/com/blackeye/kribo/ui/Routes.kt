@@ -9,6 +9,7 @@ object Routes {
     const val NOTE_EDIT = "note/{$NOTE_ID_ARG}?$QUERY_ARG={$QUERY_ARG}"
     const val SETTINGS = "settings"
     const val LICENSES = "licenses"
+    const val WIFI = "wifi-transfer"
 
     fun noteEdit(id: Long, query: String = ""): String =
         "note/$id?$QUERY_ARG=${Uri.encode(query)}"

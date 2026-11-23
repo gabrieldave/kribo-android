@@ -144,6 +144,7 @@ class NoteEditorViewModel(
                     fileName = file.name,
                     mimeType = "image/jpeg",
                     previewText = "",
+                    manual = true,
                 )
                 val index = blocks.indexOfFirst { it.id == focusedBlockId }
                 val insertAt = if (index >= 0) index + 1 else blocks.size

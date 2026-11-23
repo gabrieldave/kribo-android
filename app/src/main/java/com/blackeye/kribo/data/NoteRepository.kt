@@ -30,6 +30,8 @@ class NoteRepository(
     suspend fun getAttachments(noteId: Long): List<AttachmentEntity> =
         attachmentDao.getForNote(noteId)
 
+    suspend fun getAttachment(id: Long): AttachmentEntity? = attachmentDao.getById(id)
+
     suspend fun createNote(
         folderId: Long?,
         blocks: List<NoteBlock> = emptyList(),

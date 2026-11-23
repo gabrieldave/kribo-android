@@ -91,6 +91,7 @@ import com.blackeye.kribo.ui.common.findActivity
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.BentoNoteCard
+import com.blackeye.kribo.ui.billing.ProPaywallSheet
 import com.blackeye.kribo.ui.components.CompactNoteRow
 import com.blackeye.kribo.ui.components.EmptyStateCard
 import com.blackeye.kribo.ui.preferences.HomeLayout
@@ -117,7 +118,7 @@ fun HomeScreen(
     val activeFolderId by viewModel.activeFolderId.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
-    val paywallVisible by viewModel.paywallVisible.collectAsStateWithLifecycle()
+    val paywallReason by viewModel.paywallReason.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val freeScansLeft by viewModel.freeScansLeft.collectAsStateWithLifecycle()
     val homeLayout by uiPreferences.homeLayout.collectAsStateWithLifecycle()
@@ -292,7 +293,7 @@ fun HomeScreen(
                         viewModel.createNote { noteId -> onOpenNote(noteId, "") }
                     },
                     onScan = { launchScanner() },
-                    freeScansLeft = if (billingState.owned) null else freeScansLeft,
+                    freeScansLeft = if (viewModel.isPro()) null else freeScansLeft,
                     largeFont = largeFont,
                 )
             }
@@ -653,36 +654,17 @@ fun HomeScreen(
         }
     }
 
-    if (paywallVisible) {
-        val price = viewModel.proPrice()
-        AppModal(
-            onDismissRequest = viewModel::dismissPaywall,
-            title = stringResource(R.string.paywall_title),
-            dismissLabel = stringResource(R.string.action_cancel),
-            confirmLabel = price?.let { stringResource(R.string.settings_pro_price, it) },
-            onConfirm = if (price != null) {
-                {
-                    viewModel.dismissPaywall()
-                    onPurchase()
-                }
-            } else {
-                null
+    paywallReason?.let { reason ->
+        ProPaywallSheet(
+            reason = reason,
+            price = billingState.formattedPrice,
+            onDismiss = viewModel::dismissPaywall,
+            onPurchase = {
+                viewModel.dismissPaywall()
+                onPurchase()
             },
-        ) {
-            Text(
-                text = stringResource(R.string.paywall_body, freeScansLeft),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (price == null) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.settings_pro_unavailable),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+            onRestore = { callback -> viewModel.restorePurchases(callback) },
+        )
     }
 
     when (importState.phase) {

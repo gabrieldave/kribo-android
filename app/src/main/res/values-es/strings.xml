@@ -175,6 +175,42 @@
     <string name="settings_licenses_subtitle">PP-OCRv5, UVDoc, ML Kit y más</string>
     <string name="licenses_title">Licencias de código abierto</string>
 
+    <string name="paywall_pro_title">Kribo PRO — Pago único, tuyo para siempre</string>
+    <string name="paywall_pro_subtitle">Sin suscripciones. Paga una vez lo que otras apps cobran en un solo mes.</string>
+    <string name="paywall_reason_ocr">Límite de 5 escaneos gratis alcanzado</string>
+    <string name="paywall_reason_folders">Desbloquea carpetas personalizadas ilimitadas</string>
+    <string name="paywall_reason_photo">Una foto manual por nota en el plan gratis</string>
+    <string name="paywall_reason_theme">Desbloquea AMOLED y Papel</string>
+    <string name="paywall_reason_backup">El respaldo completo .zip es una función PRO</string>
+    <string name="paywall_reason_wifi">Transfiere tus notas por Wi-Fi local</string>
+    <string name="paywall_reason_generic">Desbloquea todas las funciones de Kribo PRO</string>
+    <string name="paywall_benefit_ocr">Escaneos OCR ilimitados con UVDoc para libros</string>
+    <string name="paywall_benefit_folders">Carpetas personalizadas ilimitadas</string>
+    <string name="paywall_benefit_themes">Temas AMOLED y Papel Cálido</string>
+    <string name="paywall_benefit_photos">Fotos manuales ilimitadas por nota</string>
+    <string name="paywall_benefit_backup">Respaldo completo .zip de notas e imágenes</string>
+    <string name="paywall_benefit_wifi">Transferencia Wi-Fi local desde cualquier navegador</string>
+    <string name="paywall_cta">Desbloquear PRO</string>
+    <string name="paywall_cta_price">Desbloquear PRO · %1$s</string>
+    <string name="paywall_restore_found">Compra restaurada. PRO está activo.</string>
+    <string name="paywall_restore_not_found">No encontramos una compra previa en esta cuenta de Google.</string>
+    <string name="cd_pro_feature">Función PRO</string>
+
+    <string name="wifi_transfer_title">Transferencia por Wi-Fi</string>
+    <string name="wifi_status_active">Activo en red local</string>
+    <string name="wifi_status_stopped">Detenido</string>
+    <string name="wifi_start">Iniciar transferencia</string>
+    <string name="wifi_stop">Detener</string>
+    <string name="wifi_url_label">Abre esta dirección en tu computadora</string>
+    <string name="wifi_pin_label">PIN de sesión</string>
+    <string name="wifi_copy_url">Copiar dirección</string>
+    <string name="wifi_copied">Dirección copiada</string>
+    <string name="wifi_no_wifi">Conecta el Pixel a una red Wi-Fi para transferir.</string>
+    <string name="wifi_scan_qr">Escanea el código QR</string>
+    <string name="wifi_start_failed">No se pudo iniciar el servidor. Inténtalo de nuevo o revisa la Wi-Fi.</string>
+    <string name="wifi_explanation">Solo funciona mientras esta pantalla está abierta. Tus notas no salen de tu red local.</string>
+    <string name="cd_wifi_toggle">Iniciar o detener transferencia</string>
+
     <string name="settings_section_data">Datos</string>
     <string name="settings_import_title">Importar notas</string>
     <string name="settings_import_subtitle">Evernote .enex, Notion/Obsidian .md o .zip</string>

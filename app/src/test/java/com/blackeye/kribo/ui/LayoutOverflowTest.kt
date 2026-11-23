@@ -22,10 +22,14 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.blackeye.kribo.data.blocks.TitleBlock
+import com.blackeye.kribo.ui.billing.PaywallReason
+import com.blackeye.kribo.ui.billing.ProPaywallContent
 import com.blackeye.kribo.ui.home.QuickCaptureBar
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.settings.AppLanguage
 import com.blackeye.kribo.ui.settings.CompactAppearanceCard
+import com.blackeye.kribo.ui.transfer.WifiTransferContent
+import com.blackeye.kribo.transfer.WifiTransferServer
 import com.blackeye.kribo.ui.note.AttachmentActionsRow
 import com.blackeye.kribo.ui.note.EditorToolbar
 import com.blackeye.kribo.ui.theme.KriboTheme
@@ -176,8 +180,10 @@ class LayoutOverflowTest {
                         CompactAppearanceCard(
                             selectedTheme = AppTheme.OBSIDIAN,
                             selectedLanguage = AppLanguage.SYSTEM,
+                            isPro = false,
                             onThemeSelected = {},
                             onLanguageSelected = {},
+                            onLockedTheme = {},
                         )
                     }
                 }
@@ -216,8 +222,88 @@ class LayoutOverflowTest {
         }
     }
 
+    @Test
+    fun proPaywallFits360Dp() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        ProPaywallContent(
+                            reason = PaywallReason.OCR_LIMIT,
+                            price = "Precio local",
+                            restoreMessage = null,
+                            onPurchase = {},
+                            onRestore = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                assertControlFits("pro-paywall-cta", fontScale)
+                assertControlFits("pro-paywall-restore", fontScale)
+            }
+        }
+    }
+
+    @Test
+    fun wifiTransferFits360Dp() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        val wifiState = WifiTransferServer.State(
+            running = true,
+            port = 8765,
+            pin = "123456",
+            ip = "192.168.1.45",
+            wifi = true,
+        )
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        WifiTransferContent(
+                            state = wifiState,
+                            url = "http://192.168.1.45:8765/?pin=123456",
+                            qrBitmap = null,
+                            copied = false,
+                            onToggle = {},
+                            onCopy = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                assertControlFits("wifi-toggle", fontScale)
+                assertControlFits("wifi-copy", fontScale)
+            }
+        }
+    }
+
     private fun assertControlFits(tag: String, fontScale: Float, maxHeightDp: Float = 86.4f) {
-        val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val widthDp = bounds.width / TEST_DENSITY
         val heightDp = bounds.height / TEST_DENSITY
         assertTrue("$tag collapsed to ${widthDp}dp at scale $fontScale", widthDp >= 30f)

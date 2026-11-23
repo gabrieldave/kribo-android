@@ -82,6 +82,8 @@ data class AttachmentBlock(
      * the user. It is stored in JSON only (no Room change) and defaults on older notes.
      */
     val pageNumber: Int = 0,
+    /** True only for pictures attached manually from camera/gallery (PRO quota). */
+    val manual: Boolean = false,
 ) : NoteBlock {
     override fun plainText(): String = previewText
 }

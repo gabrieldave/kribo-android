@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blackeye.kribo.AppContainer
 import com.blackeye.kribo.data.DEFAULT_FOLDER_GENERAL
+import com.blackeye.kribo.data.DEFAULT_FOLDER_RECEIPTS
 import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.blocks.AttachmentBlock
@@ -14,7 +15,9 @@ import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.previewText
+import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ocr.OcrQuotaStore
+import com.blackeye.kribo.ui.billing.PaywallReason
 import com.blackeye.kribo.scan.DocumentPageProcessor
 import com.blackeye.kribo.ui.common.SearchText
 import kotlinx.coroutines.Dispatchers
@@ -99,8 +102,8 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     private val _scanState = MutableStateFlow(ScanUiState())
     val scanState: StateFlow<ScanUiState> = _scanState.asStateFlow()
 
-    private val _paywallVisible = MutableStateFlow(false)
-    val paywallVisible: StateFlow<Boolean> = _paywallVisible.asStateFlow()
+    private val _paywallReason = MutableStateFlow<PaywallReason?>(null)
+    val paywallReason: StateFlow<PaywallReason?> = _paywallReason.asStateFlow()
 
     private val _importState = MutableStateFlow(ImportUiState())
     val importState: StateFlow<ImportUiState> = _importState.asStateFlow()
@@ -121,8 +124,8 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
-            container.billingManager.state.collect {
-                _freeScansLeft.value = container.quotaStore.remaining(it.owned)
+            container.entitlementRepository.isPro.collect { pro ->
+                _freeScansLeft.value = container.quotaStore.remaining(pro)
             }
         }
     }
@@ -223,8 +226,17 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun createFolder(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.createFolder(name)
+        viewModelScope.launch {
+            val customCount = withContext(Dispatchers.IO) {
+                repository.getAllFolders().count {
+                    it.id != DEFAULT_FOLDER_GENERAL && it.id != DEFAULT_FOLDER_RECEIPTS
+                }
+            }
+            if (!ProLimits.canCreateFolder(customCount, isPro())) {
+                openPaywall(PaywallReason.FOLDERS_LIMIT)
+                return@launch
+            }
+            withContext(Dispatchers.IO) { repository.createFolder(name) }
         }
     }
 
@@ -243,19 +255,25 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun isPro(): Boolean = container.billingManager.state.value.owned
-
-    fun proPrice(): String? = container.billingManager.state.value.formattedPrice
+    fun isPro(): Boolean = container.entitlementRepository.isPro.value
 
     /** Quota gate. Returns false and opens the paywall when the free tier is exhausted. */
     fun canStartScan(): Boolean {
         if (isPro() || _freeScansLeft.value > 0) return true
-        _paywallVisible.value = true
+        openPaywall(PaywallReason.OCR_LIMIT)
         return false
     }
 
+    fun openPaywall(reason: PaywallReason) {
+        _paywallReason.value = reason
+    }
+
     fun dismissPaywall() {
-        _paywallVisible.value = false
+        _paywallReason.value = null
+    }
+
+    fun restorePurchases(onResult: (Boolean) -> Unit) {
+        container.entitlementRepository.restore(onResult)
     }
 
     fun onScanLaunchFailed() {
