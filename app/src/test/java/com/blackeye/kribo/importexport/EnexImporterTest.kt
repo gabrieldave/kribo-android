@@ -58,6 +58,31 @@ class EnexImporterTest {
     }
 
     @Test
+    fun extractsBase64ImageResourcesAsAttachments() = runBlocking {
+        val imageBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)
+        val enex = """
+            <en-export>
+              <note>
+                <title>Nota con foto</title>
+                <content><![CDATA[<en-note><div>Con imagen</div></en-note>]]></content>
+                <resource>
+                  <data encoding="base64">${Base64.getEncoder().encodeToString(imageBytes)}</data>
+                  <mime>image/png</mime>
+                  <resource-attributes><file-name>foto.png</file-name></resource-attributes>
+                </resource>
+              </note>
+            </en-export>
+        """.trimIndent()
+
+        val note = EnexImporter().parseAll(ByteArrayInputStream(enex.toByteArray())).single()
+
+        assertEquals(1, note.attachments.size)
+        assertEquals("foto.png", note.attachments.single().fileName)
+        assertEquals("image/png", note.attachments.single().mimeType)
+        assertTrue(imageBytes.contentEquals(note.attachments.single().bytes))
+    }
+
+    @Test
     fun streamsMultipleNotesIndependently() = runBlocking {
         val enex = """
             <en-export>

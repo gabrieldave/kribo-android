@@ -105,6 +105,20 @@ class NoteRepository(
         )
     }
 
+    /** Persists user edits to the extracted OCR text and keeps the search index in sync. */
+    suspend fun updateAttachmentText(noteId: Long, attachmentId: Long, text: String) {
+        attachmentDao.updateExtractedText(attachmentId, text)
+        refreshOcrIndex(noteId)
+    }
+
+    /** Removes the row and its private file when the user deletes an image block. */
+    suspend fun deleteAttachment(noteId: Long, attachmentId: Long) {
+        val attachment = attachmentDao.getById(attachmentId) ?: return
+        attachmentDao.deleteById(attachmentId)
+        runCatching { File(attachment.filePath).delete() }
+        refreshOcrIndex(noteId)
+    }
+
     suspend fun deleteNote(noteId: Long) {
         attachmentDao.deleteForNote(noteId)
         noteDao.deleteById(noteId)

@@ -20,6 +20,7 @@ class BlockCodecTest {
                 fileName = "scan.jpg",
                 mimeType = "image/jpeg",
                 previewText = "texto OCR",
+                pageNumber = 2,
             ),
         )
 
@@ -32,6 +33,21 @@ class BlockCodecTest {
         assertEquals(true, (decoded[3] as TaskBlock).checked)
         assertEquals(7L, (decoded[6] as AttachmentBlock).attachmentId)
         assertEquals("texto OCR", (decoded[6] as AttachmentBlock).previewText)
+        assertEquals(2, (decoded[6] as AttachmentBlock).pageNumber)
+    }
+
+    @Test
+    fun olderAttachmentJsonWithoutPageNumberStillDecodes() {
+        val legacy = """
+            [{"type":"attachment","id":"a1","attachmentId":3,"fileName":"scan.jpg",
+              "mimeType":"image/jpeg","previewText":"hola"}]
+        """.trimIndent()
+
+        val decoded = BlockCodec.decode(legacy)
+
+        assertEquals(1, decoded.size)
+        assertEquals(0, (decoded.first() as AttachmentBlock).pageNumber)
+        assertEquals("hola", (decoded.first() as AttachmentBlock).previewText)
     }
 
     @Test

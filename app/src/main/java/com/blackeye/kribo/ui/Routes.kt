@@ -1,10 +1,14 @@
 package com.blackeye.kribo.ui
 
+import android.net.Uri
+
 object Routes {
     const val HOME = "home"
     const val NOTE_ID_ARG = "noteId"
-    const val NOTE_EDIT = "note/{$NOTE_ID_ARG}"
+    const val QUERY_ARG = "query"
+    const val NOTE_EDIT = "note/{$NOTE_ID_ARG}?$QUERY_ARG={$QUERY_ARG}"
     const val SETTINGS = "settings"
 
-    fun noteEdit(id: Long): String = "note/$id"
+    fun noteEdit(id: Long, query: String = ""): String =
+        "note/$id?$QUERY_ARG=${Uri.encode(query)}"
 }

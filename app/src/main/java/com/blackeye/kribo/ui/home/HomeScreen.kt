@@ -99,7 +99,7 @@ fun HomeScreen(
     viewModel: LibraryViewModel,
     uiPreferences: UiPreferences,
     billingState: BillingUiState,
-    onOpenNote: (Long) -> Unit,
+    onOpenNote: (Long, String) -> Unit,
     onSettings: () -> Unit,
     onPurchase: () -> Unit,
 ) {
@@ -177,7 +177,7 @@ fun HomeScreen(
             val noteId = scanState.noteId
             if (noteId != null) {
                 viewModel.acknowledgeScan()
-                onOpenNote(noteId)
+                onOpenNote(noteId, "")
             }
         }
     }
@@ -235,7 +235,7 @@ fun HomeScreen(
                     }
                 },
                 onOpenEditor = {
-                    viewModel.createNote { noteId -> onOpenNote(noteId) }
+                    viewModel.createNote { noteId -> onOpenNote(noteId, "") }
                 },
                 onScan = { launchScanner() },
                 freeScansLeft = if (billingState.owned) null else freeScansLeft,
@@ -337,10 +337,11 @@ fun HomeScreen(
                         }
                         CompactNoteRow(
                             item = item,
+                            query = query,
                             folderName = item.note.folderId?.let(folderNames::get),
                             folderColor = item.note.folderId?.let(folderColors::get)
                                 ?: MaterialTheme.colorScheme.outline,
-                            onClick = { onOpenNote(item.note.id) },
+                            onClick = { onOpenNote(item.note.id, query) },
                             onDelete = { notePendingDelete = item.note },
                             onTogglePin = { viewModel.togglePinned(item.note) },
                         )
@@ -357,10 +358,11 @@ fun HomeScreen(
                     items(items = notes, key = { item -> item.note.id }) { item ->
                         BentoNoteCard(
                             item = item,
+                            query = query,
                             folderName = item.note.folderId?.let(folderNames::get),
                             folderColor = item.note.folderId?.let(folderColors::get)
                                 ?: MaterialTheme.colorScheme.outline,
-                            onClick = { onOpenNote(item.note.id) },
+                            onClick = { onOpenNote(item.note.id, query) },
                         )
                     }
                     item { Spacer(Modifier.height(12.dp)) }

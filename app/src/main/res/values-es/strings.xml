@@ -122,6 +122,27 @@
     <string name="block_toggle_content_placeholder">Contenido oculto</string>
     <string name="block_quote_placeholder">Cita</string>
     <string name="attachment_scan">Documento escaneado</string>
+
+    <string name="attachment_scan_page">Escaneo %1$d</string>
+    <string name="attachment_page">Página %1$d</string>
+    <string name="attachment_image">Imagen</string>
+    <string name="attachment_expand">Ver texto completo</string>
+    <string name="attachment_collapse">Contraer texto</string>
+    <string name="attachment_copy">Copiar texto</string>
+    <string name="attachment_copied">Copiado</string>
+    <string name="attachment_edit">Editar texto</string>
+    <string name="attachment_edit_ocr_label">Texto extraído</string>
+    <string name="attachment_save_text">Guardar texto</string>
+    <string name="attachment_view_full">Ver imagen completa</string>
+    <string name="attachment_zoom_hint">Pellizca para ampliar · doble toque para restablecer</string>
+    <string name="cd_attach_image">Adjuntar imagen</string>
+    <string name="attach_image_title">Adjuntar imagen</string>
+    <string name="attach_from_gallery">Galería</string>
+    <string name="attach_from_camera">Cámara</string>
+    <string name="image_add_error_title">No se añadió la imagen</string>
+    <string name="image_add_error_body">No se pudo leer la imagen. Prueba con otro archivo.</string>
+    <string name="search_highlight_chip">Resaltado: %1$s</string>
+    <string name="search_highlight_clear">Quitar resaltado</string>
     <string name="cd_delete_block">Eliminar bloque</string>
     <string name="cd_block_title">Insertar título</string>
     <string name="cd_block_subtitle">Insertar subtítulo</string>

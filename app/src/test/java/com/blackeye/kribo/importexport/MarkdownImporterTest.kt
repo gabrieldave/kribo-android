@@ -89,6 +89,44 @@ class MarkdownImporterTest {
     }
 
     @Test
+    fun zipExtractsReferencedImagesAndKeepsThemInsideTheNote() = runBlocking {
+        val zipBytes = ByteArrayOutputStream().also { buffer ->
+            ZipOutputStream(buffer).use { zip ->
+                fun addBytes(name: String, bytes: ByteArray) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(bytes)
+                    zip.closeEntry()
+                }
+                addBytes(
+                    "Notas/A.md",
+                    "# A\n\nPárrafo\n\n![foto](assets/foto.png)\n\nDespués".toByteArray(),
+                )
+                addBytes("Notas/assets/foto.png", byteArrayOf(1, 2, 3, 4))
+                addBytes(
+                    "Notas/B.md",
+                    "# B\n\n![[assets/dos.jpg]]\n".toByteArray(),
+                )
+                addBytes("Notas/assets/dos.jpg", byteArrayOf(9, 8, 7))
+            }
+        }.toByteArray()
+
+        val notes = mutableListOf<ImportedNote>()
+        MarkdownImporter().parseZip(ByteArrayInputStream(zipBytes)) { notes += it }
+
+        assertEquals(2, notes.size)
+        val first = notes.first { it.title == "A" }
+        assertEquals(1, first.attachments.size)
+        assertEquals("foto.png", first.attachments.first().fileName)
+        assertEquals("image/png", first.attachments.first().mimeType)
+        assertTrue(first.blocks.any { it is com.blackeye.kribo.data.blocks.AttachmentBlock && it.fileName == "foto.png" })
+        assertTrue(first.blocks.none { it is ParagraphBlock && it.text.startsWith("Imagen:") })
+
+        val second = notes.first { it.title == "B" }
+        assertEquals("dos.jpg", second.attachments.single().fileName)
+        assertEquals("image/jpeg", second.attachments.single().mimeType)
+    }
+
+    @Test
     fun stripsYamlFrontMatter() {
         val markdown = """
             ---

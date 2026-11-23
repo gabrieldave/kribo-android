@@ -19,9 +19,38 @@ class AttachmentStore(private val attachmentsRoot: File) {
 
     fun saveBytes(noteId: Long, fileName: String, bytes: ByteArray): File {
         val cleanName = File(fileName).name.ifBlank { "attachment-${System.currentTimeMillis()}" }
-        val target = File(noteDir(noteId), cleanName)
+        val target = uniqueFile(noteDir(noteId), cleanName)
         target.writeBytes(bytes)
         return target
+    }
+
+    /**
+     * Copies a gallery/camera picture into private storage, downscaled to a sane long side and
+     * recompressed as clean JPEG. Nothing is written outside `filesDir/attachments/<noteId>/`.
+     */
+    suspend fun saveImage(
+        contentResolver: ContentResolver,
+        noteId: Long,
+        uri: Uri,
+    ): File? = withContext(Dispatchers.IO) {
+        val bitmap = decodeScaled(contentResolver, uri, MAX_IMAGE_LONG_SIDE) ?: return@withContext null
+        try {
+            val target = uniqueFile(
+                noteDir(noteId),
+                "image-${System.currentTimeMillis()}.jpg",
+            )
+            val written = runCatching {
+                target.outputStream().use { stream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, IMAGE_QUALITY, stream)
+                }
+            }.getOrDefault(false)
+            if (written && target.length() > 0L) target else {
+                target.delete()
+                null
+            }
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     suspend fun saveScanPage(
@@ -32,14 +61,19 @@ class AttachmentStore(private val attachmentsRoot: File) {
     ): File? = withContext(Dispatchers.IO) {
         val bitmap = decodeScaled(contentResolver, uri, MAX_SCAN_LONG_SIDE) ?: return@withContext null
         try {
-            val target = File(
+            val target = uniqueFile(
                 noteDir(noteId),
                 "scan-${System.currentTimeMillis()}-${pageIndex + 1}.jpg",
             )
-            target.outputStream().use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, SCAN_QUALITY, stream)
+            val written = runCatching {
+                target.outputStream().use { stream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, SCAN_QUALITY, stream)
+                }
+            }.getOrDefault(false)
+            if (written && target.length() > 0L) target else {
+                target.delete()
+                null
             }
-            target
         } finally {
             bitmap.recycle()
         }
@@ -51,6 +85,20 @@ class AttachmentStore(private val attachmentsRoot: File) {
 
     fun deleteAll() {
         attachmentsRoot.deleteRecursively()
+    }
+
+    /** Never overwrites an existing attachment: `foto.jpg` → `foto-1.jpg`, `foto-2.jpg`… */
+    private fun uniqueFile(directory: File, fileName: String): File {
+        val base = fileName.substringBeforeLast('.', fileName)
+        val extension = fileName.substringAfterLast('.', "")
+        val suffix = if (extension.isBlank()) "" else ".$extension"
+        var candidate = File(directory, fileName)
+        var index = 1
+        while (candidate.exists()) {
+            candidate = File(directory, "$base-$index$suffix")
+            index++
+        }
+        return candidate
     }
 
     private fun decodeScaled(
@@ -95,6 +143,8 @@ class AttachmentStore(private val attachmentsRoot: File) {
 
     companion object {
         private const val MAX_SCAN_LONG_SIDE = 2400
-        private const val SCAN_QUALITY = 85
+        private const val SCAN_QUALITY = 90
+        private const val MAX_IMAGE_LONG_SIDE = 2048
+        private const val IMAGE_QUALITY = 88
     }
 }

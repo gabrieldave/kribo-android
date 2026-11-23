@@ -38,7 +38,7 @@ fun KriboApp(
                 viewModel = library,
                 uiPreferences = container.uiPreferences,
                 billingState = billingState,
-                onOpenNote = { id -> navController.navigate(Routes.noteEdit(id)) },
+                onOpenNote = { id, query -> navController.navigate(Routes.noteEdit(id, query)) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
                 onPurchase = onPurchase,
             )
@@ -48,12 +48,18 @@ fun KriboApp(
             route = Routes.NOTE_EDIT,
             arguments = listOf(
                 navArgument(Routes.NOTE_ID_ARG) { type = NavType.LongType },
+                navArgument(Routes.QUERY_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
             ),
         ) { backStackEntry ->
             val noteId = backStackEntry.arguments?.getLong(Routes.NOTE_ID_ARG) ?: 0L
+            val query = backStackEntry.arguments?.getString(Routes.QUERY_ARG).orEmpty()
             if (noteId > 0L) {
                 NoteEditorScreen(
                     noteId = noteId,
+                    initialQuery = query,
                     container = container,
                     onBack = { navController.popBackStack() },
                 )

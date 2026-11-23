@@ -22,4 +22,10 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE noteId = :noteId")
     suspend fun deleteForNote(noteId: Long)
+
+    @Query("UPDATE attachments SET extractedText = :text WHERE id = :id")
+    suspend fun updateExtractedText(id: Long, text: String)
+
+    @Query("DELETE FROM attachments WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

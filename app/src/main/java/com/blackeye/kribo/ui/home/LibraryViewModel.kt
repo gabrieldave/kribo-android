@@ -15,6 +15,7 @@ import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.previewText
 import com.blackeye.kribo.ocr.OcrQuotaStore
+import com.blackeye.kribo.ui.common.SearchText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -84,12 +85,12 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     val notes: StateFlow<List<NoteListItem>> = combine(selectedFolderId, query) { folder, text ->
         folder to text
     }.flatMapLatest { (folder, text) ->
-        val source = if (text.isBlank()) {
-            repository.observeNotes(folder)
-        } else {
-            repository.searchNotes(text)
+        // Accent-insensitive matching cannot be delegated to SQLite LIKE, so the folder flow is
+        // filtered in memory with Normalizer.Form.NFD. It keeps `cancion` finding `canción`.
+        repository.observeNotes(folder).map { list ->
+            list.filter { note -> text.isBlank() || note.matchesQuery(text) }
+                .map { note -> note.toListItem(text) }
         }
-        source.map { list -> list.map { note -> note.toListItem(text) } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _scanState = MutableStateFlow(ScanUiState())
@@ -206,8 +207,9 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Copies and optimizes every page, then runs PP-OCRv5 on Dispatchers.Default. The engine is
-     * only instantiated here — never during app start or Home composition.
+     * Copies and optimizes every page, runs PP-OCRv5 off the main thread and stores the complete
+     * extracted text in the "Recibos" folder. The engine is only instantiated here — never during
+     * app start. A free scan is consumed only after at least one page returns real OCR text.
      */
     fun processScan(uris: List<Uri>, contentResolver: ContentResolver) {
         if (uris.isEmpty()) return
@@ -218,25 +220,36 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         )
         viewModelScope.launch {
             var noteId: Long? = null
-            var attachedPages = 0
+            var savedPages = 0
+            var ocrPages = 0
             try {
-                val folderId = selectedFolderId.value ?: DEFAULT_FOLDER_GENERAL
-                noteId = withContext(Dispatchers.IO) { repository.createNote(folderId) }
+                val id = withContext(Dispatchers.IO) {
+                    // The starter folder is normally id 2, but it can be deleted by the user:
+                    // recreate it by name instead of failing the foreign key.
+                    val folderId = repository.findOrCreateFolder(SCAN_FOLDER_NAME)
+                    repository.createNote(folderId = folderId)
+                }
+                noteId = id
                 val blocks = mutableListOf<NoteBlock>()
 
                 uris.forEachIndexed { index, uri ->
                     _scanState.update { it.copy(page = index + 1) }
                     val file = container.attachmentStore.saveScanPage(
                         contentResolver = contentResolver,
-                        noteId = noteId,
+                        noteId = id,
                         uri = uri,
                         pageIndex = index,
                     ) ?: return@forEachIndexed
+                    savedPages++
 
-                    val text = container.ocrSubsystem.recognize(file).orEmpty()
+                    val text = container.ocrSubsystem.recognize(file)
+                        .orEmpty()
+                        .trim()
+                    if (text.isNotBlank()) ocrPages++
+
                     val attachmentId = withContext(Dispatchers.IO) {
                         repository.addAttachment(
-                            noteId = noteId,
+                            noteId = id,
                             filePath = file.absolutePath,
                             mimeType = "image/jpeg",
                             extractedText = text,
@@ -246,23 +259,31 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                         attachmentId = attachmentId,
                         fileName = file.name,
                         mimeType = "image/jpeg",
-                        previewText = text.take(600),
+                        previewText = text,
+                        pageNumber = index + 1,
                     )
-                    attachedPages++
                 }
 
-                if (attachedPages > 0) {
-                    withContext(Dispatchers.IO) { repository.saveBlocks(noteId, blocks) }
+                if (savedPages == 0) {
+                    withContext(Dispatchers.IO) { repository.deleteNote(id) }
+                    _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
+                    return@launch
+                }
+
+                // saveBlocks rebuilds plainTextIndex + ocrTextIndex with the full OCR text.
+                withContext(Dispatchers.IO) { repository.saveBlocks(id, blocks) }
+
+                if (ocrPages > 0) {
                     container.quotaStore.consume()
                     _freeScansLeft.value = container.quotaStore.remaining(isPro())
-                    _scanState.value = ScanUiState(phase = ScanPhase.COMPLETE, noteId = noteId)
-                } else {
-                    withContext(Dispatchers.IO) { repository.deleteNote(noteId) }
-                    _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
                 }
+
+                // A new scan must not be hidden by an old search filter.
+                query.value = ""
+                _scanState.value = ScanUiState(phase = ScanPhase.COMPLETE, noteId = id)
             } catch (throwable: Throwable) {
-                if (noteId != null && attachedPages == 0) {
-                    withContext(Dispatchers.IO) { repository.deleteNote(noteId) }
+                noteId?.let { id ->
+                    withContext(Dispatchers.IO) { repository.deleteNote(id) }
                 }
                 _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
             }
@@ -366,19 +387,17 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         )
         if (activeQuery.isBlank()) return base
 
-        val inOcr = ocrTextIndex.contains(activeQuery, ignoreCase = true)
+        val inOcr = SearchText.contains(ocrTextIndex, activeQuery)
+        val inPlain = SearchText.contains(plainTextIndex, activeQuery)
+        val inTitle = SearchText.contains(title, activeQuery)
         val source = when {
             inOcr -> ocrTextIndex
-            plainTextIndex.contains(activeQuery, ignoreCase = true) -> plainTextIndex
-            else -> title
+            inPlain -> plainTextIndex
+            inTitle -> title
+            else -> plainTextIndex.ifBlank { title }
         }
-        val index = source.indexOf(activeQuery, ignoreCase = true).coerceAtLeast(0)
-        val start = (index - 40).coerceAtLeast(0)
-        val end = (index + activeQuery.length + 90).coerceAtMost(source.length)
-        val snippet = source.substring(start, end)
-            .replace('\n', ' ')
-            .trim()
-            .let { if (start > 0) "…$it" else it }
+        // The window is centred on the first match, so the highlighted word is never cut off.
+        val snippet = SearchText.snippet(source, activeQuery)
         return base.copy(snippet = snippet, matchedOcr = inOcr)
     }
 
@@ -389,3 +408,11 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         return path
     }
 }
+
+private const val SCAN_FOLDER_NAME = "Recibos"
+
+/** Accent/case-insensitive match across title, body and OCR text. */
+private fun NoteEntity.matchesQuery(query: String): Boolean =
+    SearchText.contains(title, query) ||
+        SearchText.contains(plainTextIndex, query) ||
+        SearchText.contains(ocrTextIndex, query)

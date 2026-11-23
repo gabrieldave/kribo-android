@@ -1,15 +1,22 @@
 package com.blackeye.kribo.ui.note
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,22 +34,29 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Subject
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.automirrored.rounded.Subject
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.UnfoldMore
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,10 +65,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -64,15 +82,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -89,6 +114,7 @@ import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.data.blocks.ToggleBlock
+import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.StatusPill
@@ -101,6 +127,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun NoteEditorScreen(
     noteId: Long,
+    initialQuery: String = "",
     container: AppContainer,
     onBack: () -> Unit,
 ) {
@@ -109,7 +136,14 @@ fun NoteEditorScreen(
     val viewModel: NoteEditorViewModel = viewModel(
         key = "note-editor-$noteId",
         factory = viewModelFactory {
-            initializer { NoteEditorViewModel(container.noteRepository, noteId) }
+            initializer {
+                NoteEditorViewModel(
+                    repository = container.noteRepository,
+                    attachmentStore = container.attachmentStore,
+                    noteId = noteId,
+                    initialSearchQuery = initialQuery,
+                )
+            }
         },
     )
 
@@ -121,9 +155,48 @@ fun NoteEditorScreen(
         .firstOrNull { it.text.isNotBlank() }
         ?.text
     val screenTitle = titleBlock?.take(40) ?: stringResource(R.string.note_title_edit)
+    val listState = rememberLazyListState()
 
     var showExport by remember { mutableStateOf(false) }
     var exportError by remember { mutableStateOf(false) }
+    var showAttachChooser by remember { mutableStateOf(false) }
+    var viewerPath by remember { mutableStateOf<String?>(null) }
+    var viewerLabel by remember { mutableStateOf("") }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    val highlight = SpanStyle(
+        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.26f),
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    )
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri != null) viewModel.addImage(uri, context.contentResolver)
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = cameraUri
+        cameraUri = null
+        if (success && uri != null) {
+            viewModel.addImage(uri, context.contentResolver)
+        }
+    }
+
+    val launchCamera: () -> Unit = {
+        val directory = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(directory, "capture-${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file,
+        )
+        cameraUri = uri
+        cameraLauncher.launch(uri)
+    }
 
     val exit: () -> Unit = { viewModel.flushAndExit(onBack) }
     BackHandler(onBack = exit)
@@ -152,6 +225,20 @@ fun NoteEditorScreen(
                     )
                 }.onFailure { exportError = true }
             }
+        }
+    }
+
+    val scrollTarget = remember(blocks, viewModel.highlightQuery) {
+        val query = viewModel.highlightQuery
+        if (query.isBlank()) {
+            -1
+        } else {
+            blocks.indexOfFirst { SearchText.contains(it.plainText(), query) }
+        }
+    }
+    LaunchedEffect(scrollTarget, viewModel.isLoading) {
+        if (!viewModel.isLoading && scrollTarget >= 0) {
+            listState.animateScrollToItem(scrollTarget)
         }
     }
 
@@ -185,7 +272,10 @@ fun NoteEditorScreen(
             }
         },
         footer = {
-            EditorToolbar(onAdd = viewModel::addBlock)
+            EditorToolbar(
+                onAdd = viewModel::addBlock,
+                onAttachImage = { showAttachChooser = true },
+            )
         },
     ) {
         if (viewModel.isLoading) {
@@ -207,7 +297,15 @@ fun NoteEditorScreen(
                 )
             }
         } else {
+            if (viewModel.highlightQuery.isNotBlank()) {
+                SearchHighlightChip(
+                    query = viewModel.highlightQuery,
+                    onClear = viewModel::clearHighlight,
+                )
+                Spacer(Modifier.height(6.dp))
+            }
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -216,16 +314,81 @@ fun NoteEditorScreen(
                         block = block,
                         focused = viewModel.focusedBlockId == block.id,
                         attachment = (block as? AttachmentBlock)?.attachmentId?.let(attachmentMap::get),
+                        highlightQuery = viewModel.highlightQuery,
+                        highlightStyle = highlight,
                         onFocus = { viewModel.onFocus(block.id) },
                         onUpdate = { transform ->
                             viewModel.updateBlock(block.id, transform)
                         },
                         onDelete = { viewModel.removeBlock(block.id) },
+                        onOpenImage = { path, label ->
+                            viewerPath = path
+                            viewerLabel = label
+                        },
+                        onSaveAttachmentText = { attachmentBlock, text ->
+                            val attachmentId = attachmentBlock.attachmentId
+                            if (attachmentId != null) {
+                                viewModel.updateAttachmentText(attachmentBlock.id, attachmentId, text)
+                            }
+                        },
                     )
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
         }
+    }
+
+    if (showAttachChooser) {
+        AppModal(
+            onDismissRequest = { showAttachChooser = false },
+            title = stringResource(R.string.attach_image_title),
+            dismissLabel = stringResource(R.string.action_cancel),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        showAttachChooser = false
+                        galleryLauncher.launch("image/*")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PhotoLibrary,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.attach_from_gallery))
+                }
+                OutlinedButton(
+                    onClick = {
+                        showAttachChooser = false
+                        launchCamera()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CameraAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.attach_from_camera))
+                }
+            }
+        }
+    }
+
+    viewerPath?.let { path ->
+        ZoomableImageViewer(
+            path = path,
+            title = viewerLabel,
+            onDismiss = { viewerPath = null },
+        )
     }
 
     if (showExport) {
@@ -280,10 +443,65 @@ fun NoteEditorScreen(
             )
         }
     }
+
+    if (viewModel.imageError) {
+        AppModal(
+            onDismissRequest = viewModel::clearImageError,
+            title = stringResource(R.string.image_add_error_title),
+            dismissLabel = stringResource(R.string.action_close),
+        ) {
+            Text(
+                text = stringResource(R.string.image_add_error_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable
-private fun EditorToolbar(onAdd: (NoteBlock) -> Unit) {
+private fun SearchHighlightChip(query: String, onClear: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 44.dp)
+                .padding(start = 14.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.search_highlight_chip, query),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(
+                onClick = onClear,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.search_highlight_clear),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorToolbar(
+    onAdd: (NoteBlock) -> Unit,
+    onAttachImage: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -308,6 +526,9 @@ private fun EditorToolbar(onAdd: (NoteBlock) -> Unit) {
         }
         ToolbarButton(Icons.Rounded.FormatQuote, R.string.cd_block_quote) {
             onAdd(QuoteBlock())
+        }
+        ToolbarButton(Icons.Rounded.AddPhotoAlternate, R.string.cd_attach_image) {
+            onAttachImage()
         }
     }
 }
@@ -335,9 +556,13 @@ private fun BlockRow(
     block: NoteBlock,
     focused: Boolean,
     attachment: AttachmentEntity?,
+    highlightQuery: String,
+    highlightStyle: SpanStyle,
     onFocus: () -> Unit,
     onUpdate: ((NoteBlock) -> NoteBlock) -> Unit,
     onDelete: () -> Unit,
+    onOpenImage: (String, String) -> Unit,
+    onSaveAttachmentText: (AttachmentBlock, String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.Top) {
@@ -363,6 +588,8 @@ private fun BlockRow(
                                 else R.string.block_subtitle_placeholder,
                             ),
                             onFocus = onFocus,
+                            highlightQuery = highlightQuery,
+                            highlightStyle = highlightStyle,
                             modifier = Modifier.padding(top = if (block.level <= 1) 14.dp else 10.dp),
                         )
                     }
@@ -375,6 +602,8 @@ private fun BlockRow(
                         textStyle = MaterialTheme.typography.bodyLarge,
                         placeholder = stringResource(R.string.block_paragraph_placeholder),
                         onFocus = onFocus,
+                        highlightQuery = highlightQuery,
+                        highlightStyle = highlightStyle,
                         modifier = Modifier.padding(vertical = 6.dp),
                     )
 
@@ -398,6 +627,8 @@ private fun BlockRow(
                             textStyle = MaterialTheme.typography.bodyLarge,
                             placeholder = stringResource(R.string.block_task_placeholder),
                             onFocus = onFocus,
+                            highlightQuery = highlightQuery,
+                            highlightStyle = highlightStyle,
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(vertical = 6.dp),
@@ -442,6 +673,8 @@ private fun BlockRow(
                                 textStyle = MaterialTheme.typography.titleMedium,
                                 placeholder = stringResource(R.string.block_toggle_placeholder),
                                 onFocus = onFocus,
+                                highlightQuery = highlightQuery,
+                                highlightStyle = highlightStyle,
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -456,6 +689,8 @@ private fun BlockRow(
                                 textStyle = MaterialTheme.typography.bodyMedium,
                                 placeholder = stringResource(R.string.block_toggle_content_placeholder),
                                 onFocus = onFocus,
+                                highlightQuery = highlightQuery,
+                                highlightStyle = highlightStyle,
                                 modifier = Modifier.padding(start = 48.dp, bottom = 8.dp),
                             )
                         }
@@ -485,6 +720,8 @@ private fun BlockRow(
                             ),
                             placeholder = stringResource(R.string.block_quote_placeholder),
                             onFocus = onFocus,
+                            highlightQuery = highlightQuery,
+                            highlightStyle = highlightStyle,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -492,7 +729,11 @@ private fun BlockRow(
                     is AttachmentBlock -> AttachmentCard(
                         block = block,
                         attachment = attachment,
+                        highlightQuery = highlightQuery,
+                        highlightStyle = highlightStyle,
                         onDelete = onDelete,
+                        onOpenImage = onOpenImage,
+                        onSaveText = onSaveAttachmentText,
                     )
                 }
             }
@@ -526,8 +767,22 @@ private fun BlockTextField(
     textStyle: TextStyle,
     placeholder: String,
     onFocus: () -> Unit,
+    highlightQuery: String,
+    highlightStyle: SpanStyle,
     modifier: Modifier = Modifier,
 ) {
+    val transformation = remember(highlightQuery, highlightStyle) {
+        if (highlightQuery.isBlank()) {
+            VisualTransformation.None
+        } else {
+            VisualTransformation { text ->
+                TransformedText(
+                    SearchText.highlight(text.text, highlightQuery, highlightStyle),
+                    OffsetMapping.Identity,
+                )
+            }
+        }
+    }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -536,6 +791,7 @@ private fun BlockTextField(
             .onFocusChanged { state -> if (state.isFocused) onFocus() },
         textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        visualTransformation = transformation,
         decorationBox = { innerTextField ->
             Box {
                 if (value.isEmpty()) {
@@ -555,8 +811,20 @@ private fun BlockTextField(
 private fun AttachmentCard(
     block: AttachmentBlock,
     attachment: AttachmentEntity?,
+    highlightQuery: String,
+    highlightStyle: SpanStyle,
     onDelete: () -> Unit,
+    onOpenImage: (String, String) -> Unit,
+    onSaveText: (AttachmentBlock, String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val path = attachment?.filePath
+    val label = attachmentLabel(block)
+    var expanded by remember(block.id) { mutableStateOf(false) }
+    var editing by remember(block.id) { mutableStateOf(false) }
+    var draft by remember(block.id) { mutableStateOf(block.previewText) }
+    var copied by remember(block.id) { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -566,17 +834,40 @@ private fun AttachmentCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
     ) {
         Column {
-            val bitmap = rememberAttachmentBitmap(attachment?.filePath)
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = block.fileName,
+            val bitmap = rememberAttachmentBitmap(path, maxLongSide = 1400)
+            if (bitmap != null && path != null) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 220.dp)
-                        .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)),
-                    contentScale = ContentScale.Crop,
-                )
+                        .heightIn(min = 120.dp, max = 300.dp)
+                        .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                        .background(Color.Black)
+                        .clickable { onOpenImage(path, label) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = stringResource(R.string.attachment_view_full),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.Fit,
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color.Black.copy(alpha = 0.55f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ZoomIn,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier
+                                .padding(6.dp)
+                                .size(18.dp),
+                        )
+                    }
+                }
             }
             Row(
                 modifier = Modifier
@@ -585,7 +876,7 @@ private fun AttachmentCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = block.fileName.ifBlank { stringResource(R.string.attachment_scan) },
+                    text = label,
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -607,15 +898,99 @@ private fun AttachmentCard(
                     )
                 }
             }
+
             if (block.previewText.isNotBlank()) {
-                Text(
-                    text = block.previewText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (editing) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = { draft = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            label = { Text(stringResource(R.string.attachment_edit_ocr_label)) },
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    draft = block.previewText
+                                    editing = false
+                                },
+                            ) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                            TextButton(
+                                onClick = {
+                                    onSaveText(block, draft.trim())
+                                    editing = false
+                                },
+                            ) {
+                                Text(stringResource(R.string.attachment_save_text))
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = SearchText.highlight(block.previewText, highlightQuery, highlightStyle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        maxLines = if (expanded) Int.MAX_VALUE else 6,
+                        overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = { expanded = !expanded }) {
+                            Text(
+                                stringResource(
+                                    if (expanded) R.string.attachment_collapse
+                                    else R.string.attachment_expand,
+                                ),
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                copyToClipboard(context, label, block.previewText)
+                                copied = true
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(
+                                    if (copied) R.string.attachment_copied
+                                    else R.string.attachment_copy,
+                                ),
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                draft = block.previewText
+                                editing = true
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.attachment_edit))
+                        }
+                    }
+                }
             } else {
                 Spacer(Modifier.height(10.dp))
             }
@@ -624,12 +999,95 @@ private fun AttachmentCard(
 }
 
 @Composable
-private fun rememberAttachmentBitmap(path: String?): Bitmap? {
-    val bitmap by produceState<Bitmap?>(initialValue = null, path) {
+private fun attachmentLabel(block: AttachmentBlock): String = when {
+    block.pageNumber == 1 -> stringResource(R.string.attachment_scan_page, block.pageNumber)
+    block.pageNumber > 1 -> stringResource(R.string.attachment_page, block.pageNumber)
+    else -> stringResource(R.string.attachment_image)
+}
+
+@Composable
+private fun ZoomableImageViewer(
+    path: String,
+    title: String,
+    onDismiss: () -> Unit,
+) {
+    val bitmap = rememberAttachmentBitmap(path, maxLongSide = 3200)
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    AppModal(
+        onDismissRequest = onDismiss,
+        title = title,
+        dismissLabel = stringResource(R.string.action_close),
+        fullScreen = true,
+        scrollable = false,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > 1f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = 2.5f
+                            }
+                        },
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val next = (scale * zoom).coerceIn(1f, 6f)
+                        scale = next
+                        offset = if (next > 1f) offset + pan else Offset.Zero
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = title,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y,
+                        ),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                CircularProgressIndicator(color = Color.White)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.attachment_zoom_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun copyToClipboard(context: Context, label: String, text: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+@Composable
+private fun rememberAttachmentBitmap(path: String?, maxLongSide: Int): Bitmap? {
+    val bitmap by produceState<Bitmap?>(initialValue = null, path, maxLongSide) {
         value = if (path.isNullOrBlank()) {
             null
         } else {
-            withContext(Dispatchers.IO) { decodeSampled(path, maxLongSide = 900) }
+            withContext(Dispatchers.IO) { decodeSampled(path, maxLongSide) }
         }
     }
     return bitmap

@@ -43,6 +43,8 @@ fun AppModal(
     confirmLabel: String? = null,
     onConfirm: (() -> Unit)? = null,
     dismissLabel: String? = null,
+    fullScreen: Boolean = false,
+    scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(
@@ -58,22 +60,28 @@ fun AppModal(
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
+                .padding(if (fullScreen) 8.dp else 24.dp),
+            contentAlignment = if (fullScreen) Alignment.TopCenter else Alignment.Center,
         ) {
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 440.dp),
-                shape = RoundedCornerShape(24.dp),
+                modifier = if (fullScreen) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 440.dp)
+                },
+                shape = RoundedCornerShape(if (fullScreen) 16.dp else 24.dp),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 6.dp,
                 shadowElevation = 12.dp,
             ) {
                 Column(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .verticalScroll(rememberScrollState()),
+                    modifier = (if (fullScreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+                        .padding(if (fullScreen) 12.dp else 24.dp)
+                        .then(
+                            if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier,
+                        ),
                 ) {
                     Text(
                         text = title,

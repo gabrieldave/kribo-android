@@ -33,12 +33,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.blackeye.kribo.R
 import com.blackeye.kribo.data.titleText
+import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.common.formatNoteDate
 import com.blackeye.kribo.ui.common.formatNoteDateShort
 import com.blackeye.kribo.ui.home.NoteListItem
@@ -48,6 +51,7 @@ import java.io.File
 @Composable
 fun CompactNoteRow(
     item: NoteListItem,
+    query: String,
     folderName: String?,
     folderColor: Color,
     onClick: () -> Unit,
@@ -56,6 +60,11 @@ fun CompactNoteRow(
 ) {
     val note = item.note
     val title = note.titleText.ifBlank { stringResource(R.string.note_untitled) }
+    val highlight = SpanStyle(
+        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    )
 
     Row(
         modifier = Modifier
@@ -77,7 +86,7 @@ fun CompactNoteRow(
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = title,
+                    text = SearchText.highlight(title, query, highlight),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -95,7 +104,7 @@ fun CompactNoteRow(
             if (item.snippet.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = item.snippet,
+                    text = SearchText.highlight(item.snippet, query, highlight),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -164,6 +173,7 @@ fun CompactNoteRow(
 @Composable
 fun BentoNoteCard(
     item: NoteListItem,
+    query: String,
     folderName: String?,
     folderColor: Color,
     onClick: () -> Unit,
@@ -171,6 +181,11 @@ fun BentoNoteCard(
 ) {
     val note = item.note
     val title = note.titleText.ifBlank { stringResource(R.string.note_untitled) }
+    val highlight = SpanStyle(
+        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    )
     val shape = RoundedCornerShape(22.dp)
 
     Surface(
@@ -209,7 +224,7 @@ fun BentoNoteCard(
                     Spacer(Modifier.height(8.dp))
                 }
                 Text(
-                    text = title,
+                    text = SearchText.highlight(title, query, highlight),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -217,7 +232,7 @@ fun BentoNoteCard(
                 if (item.snippet.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = item.snippet,
+                        text = SearchText.highlight(item.snippet, query, highlight),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 4,

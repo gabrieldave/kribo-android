@@ -1,5 +1,7 @@
 package com.blackeye.kribo.ui.note
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -7,8 +9,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blackeye.kribo.data.AttachmentEntity
 import com.blackeye.kribo.data.NoteRepository
-import com.blackeye.kribo.data.blocks.BlockCodec
+import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
+import com.blackeye.kribo.ocr.AttachmentStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -17,7 +20,9 @@ import kotlinx.coroutines.withContext
 
 class NoteEditorViewModel(
     private val repository: NoteRepository,
+    private val attachmentStore: AttachmentStore,
     private val noteId: Long,
+    initialSearchQuery: String = "",
 ) : ViewModel() {
 
     var blocks by mutableStateOf<List<NoteBlock>>(emptyList())
@@ -33,6 +38,16 @@ class NoteEditorViewModel(
         private set
 
     var focusedBlockId by mutableStateOf<String?>(null)
+
+    /** Search term inherited from Home; drives auto-scroll and in-editor highlighting. */
+    var highlightQuery by mutableStateOf(initialSearchQuery.trim())
+        private set
+
+    var isAddingImage by mutableStateOf(false)
+        private set
+
+    var imageError by mutableStateOf(false)
+        private set
 
     private var saveJob: Job? = null
 
@@ -56,6 +71,14 @@ class NoteEditorViewModel(
         focusedBlockId = blockId
     }
 
+    fun clearHighlight() {
+        highlightQuery = ""
+    }
+
+    fun clearImageError() {
+        imageError = false
+    }
+
     fun updateBlock(blockId: String, transform: (NoteBlock) -> NoteBlock) {
         blocks = blocks.map { block ->
             if (block.id == blockId) transform(block) else block
@@ -72,9 +95,78 @@ class NoteEditorViewModel(
     }
 
     fun removeBlock(blockId: String) {
+        val target = blocks.firstOrNull { it.id == blockId }
         blocks = blocks.filterNot { it.id == blockId }
         if (focusedBlockId == blockId) focusedBlockId = null
         scheduleSave(immediate = true)
+
+        if (target is AttachmentBlock && target.attachmentId != null) {
+            val attachmentId = target.attachmentId
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.deleteAttachment(noteId, attachmentId)
+            }
+        }
+    }
+
+    /** Gallery/camera picture → private compressed JPEG + visible block at the end of the note. */
+    fun addImage(uri: Uri, contentResolver: ContentResolver) {
+        if (isAddingImage) return
+        isAddingImage = true
+        viewModelScope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    attachmentStore.saveImage(contentResolver, noteId, uri)
+                }
+                if (file == null) {
+                    imageError = true
+                    return@launch
+                }
+                val attachmentId = withContext(Dispatchers.IO) {
+                    repository.addAttachment(
+                        noteId = noteId,
+                        filePath = file.absolutePath,
+                        mimeType = "image/jpeg",
+                        extractedText = "",
+                    )
+                }
+                val block = AttachmentBlock(
+                    attachmentId = attachmentId,
+                    fileName = file.name,
+                    mimeType = "image/jpeg",
+                    previewText = "",
+                )
+                val index = blocks.indexOfFirst { it.id == focusedBlockId }
+                val insertAt = if (index >= 0) index + 1 else blocks.size
+                val updated = blocks.toMutableList().apply { add(insertAt, block) }
+                blocks = updated
+                focusedBlockId = block.id
+                val loaded = withContext(Dispatchers.IO) {
+                    repository.saveBlocks(noteId, updated)
+                    repository.getAttachments(noteId)
+                }
+                attachments = loaded
+            } catch (throwable: Throwable) {
+                imageError = true
+            } finally {
+                isAddingImage = false
+            }
+        }
+    }
+
+    /** Keeps the editable block text and the searchable attachment row in lockstep. */
+    fun updateAttachmentText(blockId: String, attachmentId: Long, text: String) {
+        val edited = blocks.map { block ->
+            if (block.id == blockId && block is AttachmentBlock) {
+                block.copy(previewText = text)
+            } else {
+                block
+            }
+        }
+        blocks = edited
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateAttachmentText(noteId, attachmentId, text)
+            repository.saveBlocks(noteId, edited)
+        }
     }
 
     fun togglePinned() {

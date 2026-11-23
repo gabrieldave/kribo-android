@@ -122,6 +122,27 @@
     <string name="block_toggle_content_placeholder">Hidden content</string>
     <string name="block_quote_placeholder">Quote</string>
     <string name="attachment_scan">Scanned document</string>
+
+    <string name="attachment_scan_page">Scan %1$d</string>
+    <string name="attachment_page">Page %1$d</string>
+    <string name="attachment_image">Image</string>
+    <string name="attachment_expand">Show full text</string>
+    <string name="attachment_collapse">Collapse text</string>
+    <string name="attachment_copy">Copy text</string>
+    <string name="attachment_copied">Copied</string>
+    <string name="attachment_edit">Edit text</string>
+    <string name="attachment_edit_ocr_label">Extracted text</string>
+    <string name="attachment_save_text">Save text</string>
+    <string name="attachment_view_full">View full image</string>
+    <string name="attachment_zoom_hint">Pinch to zoom · double tap to reset</string>
+    <string name="cd_attach_image">Attach image</string>
+    <string name="attach_image_title">Attach image</string>
+    <string name="attach_from_gallery">Gallery</string>
+    <string name="attach_from_camera">Camera</string>
+    <string name="image_add_error_title">Image not added</string>
+    <string name="image_add_error_body">The image could not be read. Try another file.</string>
+    <string name="search_highlight_chip">Highlight: %1$s</string>
+    <string name="search_highlight_clear">Clear highlight</string>
     <string name="cd_delete_block">Delete block</string>
     <string name="cd_block_title">Insert title</string>
     <string name="cd_block_subtitle">Insert subtitle</string>

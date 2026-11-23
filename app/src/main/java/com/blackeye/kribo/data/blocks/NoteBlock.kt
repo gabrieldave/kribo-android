@@ -77,6 +77,11 @@ data class AttachmentBlock(
     val fileName: String = "",
     val mimeType: String = "image/jpeg",
     val previewText: String = "",
+    /**
+     * 1-based page number for scanned documents. `null`/0 means a regular image attached by
+     * the user. It is stored in JSON only (no Room change) and defaults on older notes.
+     */
+    val pageNumber: Int = 0,
 ) : NoteBlock {
     override fun plainText(): String = previewText
 }
