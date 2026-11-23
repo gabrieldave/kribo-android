@@ -15,6 +15,7 @@ import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.previewText
 import com.blackeye.kribo.ocr.OcrQuotaStore
+import com.blackeye.kribo.scan.DocumentPageProcessor
 import com.blackeye.kribo.ui.common.SearchText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,7 +30,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.InputStream
+import java.util.UUID
 
 data class NoteListItem(
     val note: NoteEntity,
@@ -108,6 +111,12 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     private val _freeScansLeft = MutableStateFlow(OcrQuotaStore.FREE_OCR_LIMIT)
     val freeScansLeft: StateFlow<Int> = _freeScansLeft.asStateFlow()
 
+    private val _selectionMode = MutableStateFlow(false)
+    val selectionMode: StateFlow<Boolean> = _selectionMode.asStateFlow()
+
+    private val _selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedIds: StateFlow<Set<Long>> = _selectedIds.asStateFlow()
+
     private val attachmentPathCache = mutableMapOf<Long, String?>()
 
     init {
@@ -119,19 +128,70 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun onQueryChange(value: String) {
+        clearSelection()
         query.value = value
     }
 
     fun clearQuery() {
+        clearSelection()
         query.value = ""
     }
 
     fun selectFolder(folderId: Long?) {
+        clearSelection()
         selectedFolderId.value = folderId
     }
 
     fun clearFolderSelection() {
+        clearSelection()
         selectedFolderId.value = null
+    }
+
+    fun startSelection(noteId: Long) {
+        _selectionMode.value = true
+        _selectedIds.update { it + noteId }
+    }
+
+    fun toggleSelection(noteId: Long) {
+        val next = _selectedIds.value.toMutableSet().apply {
+            if (contains(noteId)) remove(noteId) else add(noteId)
+        }
+        _selectedIds.value = next
+        if (next.isEmpty()) _selectionMode.value = false
+    }
+
+    fun selectAll(noteIds: Collection<Long>) {
+        _selectedIds.value = noteIds.toSet()
+        if (noteIds.isNotEmpty()) _selectionMode.value = true
+    }
+
+    fun clearSelection() {
+        _selectedIds.value = emptySet()
+        _selectionMode.value = false
+    }
+
+    fun deleteNotes(noteIds: Set<Long>) {
+        if (noteIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            noteIds.forEach { repository.deleteNote(it) }
+        }
+        clearSelection()
+    }
+
+    fun setPinnedFor(noteIds: Set<Long>, pinned: Boolean) {
+        if (noteIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            noteIds.forEach { repository.setPinned(it, pinned) }
+        }
+        clearSelection()
+    }
+
+    fun moveNotesToFolder(noteIds: Set<Long>, folderId: Long?) {
+        if (noteIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            noteIds.forEach { repository.moveToFolder(it, folderId) }
+        }
+        clearSelection()
     }
 
     fun createNote(onCreated: (Long) -> Unit) {
@@ -207,9 +267,10 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Copies and optimizes every page, runs PP-OCRv5 off the main thread and stores the complete
-     * extracted text in the "Recibos" folder. The engine is only instantiated here — never during
-     * app start. A free scan is consumed only after at least one page returns real OCR text.
+     * Full ScanOffline-quality pipeline: raw scanner page -> EXIF/tiled decode ->
+     * spine split for double-page books -> UVDoc flatten -> shadow/finger cleanup ->
+     * PP-OCRv5 (+ ML Kit fallback). Both the raw and flattened candidates are OCR'd and
+     * the richer text wins. Everything runs off the main thread; models stay lazy.
      */
     fun processScan(uris: List<Uri>, contentResolver: ContentResolver) {
         if (uris.isEmpty()) return
@@ -220,8 +281,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         )
         viewModelScope.launch {
             var noteId: Long? = null
-            var savedPages = 0
-            var ocrPages = 0
+            val work = File(container.scanWorkRoot, UUID.randomUUID().toString()).apply { mkdirs() }
             try {
                 val id = withContext(Dispatchers.IO) {
                     // The starter folder is normally id 2, but it can be deleted by the user:
@@ -230,34 +290,60 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                     repository.createNote(folderId = folderId)
                 }
                 noteId = id
-                val blocks = mutableListOf<NoteBlock>()
+                val candidates = ArrayList<DocumentPageProcessor.PageCandidate>()
 
                 uris.forEachIndexed { index, uri ->
-                    _scanState.update { it.copy(page = index + 1) }
-                    val file = container.attachmentStore.saveScanPage(
+                    val source = container.attachmentStore.copyScanSource(
                         contentResolver = contentResolver,
-                        noteId = id,
                         uri = uri,
-                        pageIndex = index,
+                        destinationDir = File(work, "source-$index").apply { mkdirs() },
+                    ) ?: return@forEachIndexed
+                    val processed = container.pageProcessor.process(
+                        input = source,
+                        outputDir = File(work, "out-$index").apply { mkdirs() },
+                    )
+                    candidates += processed
+                    _scanState.update {
+                        it.copy(
+                            page = candidates.size,
+                            totalPages = candidates.size + (uris.size - index - 1),
+                        )
+                    }
+                }
+
+                if (candidates.isEmpty()) {
+                    withContext(Dispatchers.IO) { repository.deleteNote(id) }
+                    _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
+                    return@launch
+                }
+
+                _scanState.update { it.copy(page = 0, totalPages = candidates.size) }
+                val blocks = mutableListOf<NoteBlock>()
+                var savedPages = 0
+                var ocrPages = 0
+
+                candidates.forEachIndexed { index, candidate ->
+                    _scanState.update { it.copy(page = index + 1) }
+                    val (text, chosen) = recognizeBestCandidate(candidate)
+                    val stored = container.attachmentStore.saveProcessedPage(
+                        noteId = id,
+                        source = chosen,
+                        pageNumber = index + 1,
                     ) ?: return@forEachIndexed
                     savedPages++
-
-                    val text = container.ocrSubsystem.recognize(file)
-                        .orEmpty()
-                        .trim()
                     if (text.isNotBlank()) ocrPages++
 
                     val attachmentId = withContext(Dispatchers.IO) {
                         repository.addAttachment(
                             noteId = id,
-                            filePath = file.absolutePath,
+                            filePath = stored.absolutePath,
                             mimeType = "image/jpeg",
                             extractedText = text,
                         )
                     }
                     blocks += AttachmentBlock(
                         attachmentId = attachmentId,
-                        fileName = file.name,
+                        fileName = stored.name,
                         mimeType = "image/jpeg",
                         previewText = text,
                         pageNumber = index + 1,
@@ -286,8 +372,35 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                     withContext(Dispatchers.IO) { repository.deleteNote(id) }
                 }
                 _scanState.value = ScanUiState(phase = ScanPhase.ERROR)
+            } finally {
+                withContext(Dispatchers.IO) { work.deleteRecursively() }
             }
         }
+    }
+
+    /**
+     * OCRs both candidates and keeps the one with more prose. The raw image protects against
+     * UVDoc over-warping a flat receipt; the flattened one recovers curved book pages.
+     */
+    private suspend fun recognizeBestCandidate(
+        candidate: DocumentPageProcessor.PageCandidate,
+    ): Pair<String, File> {
+        val rawText = container.ocrSubsystem.recognize(candidate.raw).orEmpty().trim()
+        val flat = candidate.flat
+        if (flat == null) return rawText to candidate.raw
+        val flatText = container.ocrSubsystem.recognize(flat).orEmpty().trim()
+        return if (textScore(flatText) >= textScore(rawText)) {
+            flatText to flat
+        } else {
+            rawText to candidate.raw
+        }
+    }
+
+    private fun textScore(text: String): Int {
+        if (text.isBlank()) return 0
+        val letters = text.count { it.isLetter() }
+        val words = text.split(Regex("\\s+")).count { it.length >= 2 }
+        return letters * 2 + words * 3
     }
 
     fun acknowledgeScan() {

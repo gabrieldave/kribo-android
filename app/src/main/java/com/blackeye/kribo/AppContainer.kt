@@ -9,6 +9,7 @@ import com.blackeye.kribo.importexport.ImportService
 import com.blackeye.kribo.ocr.AttachmentStore
 import com.blackeye.kribo.ocr.OcrQuotaStore
 import com.blackeye.kribo.ocr.OcrSubsystem
+import com.blackeye.kribo.scan.DocumentPageProcessor
 import com.blackeye.kribo.security.KeystoreSecureStore
 import com.blackeye.kribo.ui.preferences.UiPreferences
 import java.io.File
@@ -38,6 +39,13 @@ class AppContainer(context: Context) {
     val exportService: ExportService by lazy { ExportService(noteRepository) }
 
     val ocrSubsystem: OcrSubsystem by lazy { OcrSubsystem(appContext) }
+
+    /** UVDoc + spine splitter, created only when a scan starts. */
+    val pageProcessor: DocumentPageProcessor by lazy { DocumentPageProcessor(appContext) }
+
+    /** Scratch space for raw scanner pages and UVDoc output. Cleared per scan. */
+    val scanWorkRoot: File
+        get() = File(appContext.cacheDir, "scan-work")
 
     val quotaStore: OcrQuotaStore by lazy {
         OcrQuotaStore(KeystoreSecureStore(appContext))

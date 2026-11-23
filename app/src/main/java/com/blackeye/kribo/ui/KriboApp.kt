@@ -14,6 +14,7 @@ import com.blackeye.kribo.billing.BillingUiState
 import com.blackeye.kribo.ui.home.HomeScreen
 import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.note.NoteEditorScreen
+import com.blackeye.kribo.ui.settings.LicensesScreen
 import com.blackeye.kribo.ui.settings.SettingsScreen
 
 @Composable
@@ -74,7 +75,12 @@ fun KriboApp(
                 onBack = { navController.popBackStack() },
                 onPurchase = onPurchase,
                 onRestorePurchases = container.billingManager::refresh,
+                onLicenses = { navController.navigate(Routes.LICENSES) },
             )
+        }
+
+        composable(Routes.LICENSES) {
+            LicensesScreen(onBack = { navController.popBackStack() })
         }
     }
 }

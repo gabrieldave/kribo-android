@@ -21,7 +21,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -35,7 +38,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -45,11 +51,14 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
@@ -78,6 +87,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,12 +100,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,6 +121,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.blackeye.kribo.AppContainer
 import com.blackeye.kribo.R
 import com.blackeye.kribo.data.AttachmentEntity
+import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
@@ -163,6 +178,12 @@ fun NoteEditorScreen(
     var viewerPath by remember { mutableStateOf<String?>(null) }
     var viewerLabel by remember { mutableStateOf("") }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showFolderPicker by remember { mutableStateOf(false) }
+
+    val activeBlock = blocks.firstOrNull { it.id == viewModel.focusedBlockId }
+    val folderLabel = viewModel.folders.firstOrNull { it.id == viewModel.folderId }?.name
+        ?: stringResource(R.string.folder_general)
 
     val highlight = SpanStyle(
         background = MaterialTheme.colorScheme.primary.copy(alpha = 0.26f),
@@ -270,11 +291,24 @@ fun NoteEditorScreen(
                     contentDescription = stringResource(R.string.cd_export),
                 )
             }
+            IconButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("editor-delete-note"),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteOutline,
+                    contentDescription = stringResource(R.string.cd_delete_note),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         },
         footer = {
             EditorToolbar(
                 onAdd = viewModel::addBlock,
                 onAttachImage = { showAttachChooser = true },
+                activeBlock = activeBlock,
             )
         },
     ) {
@@ -297,6 +331,11 @@ fun NoteEditorScreen(
                 )
             }
         } else {
+            FolderChipButton(
+                label = folderLabel,
+                onClick = { showFolderPicker = true },
+            )
+            Spacer(Modifier.height(6.dp))
             if (viewModel.highlightQuery.isNotBlank()) {
                 SearchHighlightChip(
                     query = viewModel.highlightQuery,
@@ -391,6 +430,61 @@ fun NoteEditorScreen(
         )
     }
 
+    if (showDeleteConfirm) {
+        AppModal(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = stringResource(R.string.home_delete_title),
+            dismissLabel = stringResource(R.string.action_cancel),
+            confirmLabel = stringResource(R.string.action_delete),
+            onConfirm = {
+                showDeleteConfirm = false
+                viewModel.deleteNote(onBack)
+            },
+        ) {
+            Text(
+                text = stringResource(R.string.home_delete_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (showFolderPicker) {
+        AppModal(
+            onDismissRequest = { showFolderPicker = false },
+            title = stringResource(R.string.editor_move_note_title),
+            dismissLabel = stringResource(R.string.action_cancel),
+        ) {
+            viewModel.folders.forEach { folder ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable {
+                            viewModel.moveToFolder(folder.id)
+                            showFolderPicker = false
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Folder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = folder.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+
     if (showExport) {
         AppModal(
             onDismissRequest = { showExport = false },
@@ -460,6 +554,48 @@ fun NoteEditorScreen(
 }
 
 @Composable
+private fun FolderChipButton(label: String, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag("editor-folder-chip"),
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = stringResource(R.string.editor_move_note_title),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun SearchHighlightChip(query: String, onClear: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -479,6 +615,7 @@ private fun SearchHighlightChip(query: String, onClear: () -> Unit) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
@@ -498,38 +635,92 @@ private fun SearchHighlightChip(query: String, onClear: () -> Unit) {
 }
 
 @Composable
-private fun EditorToolbar(
+internal fun EditorToolbar(
     onAdd: (NoteBlock) -> Unit,
     onAttachImage: () -> Unit,
+    activeBlock: NoteBlock?,
 ) {
+    val activeTitleLevel = (activeBlock as? TitleBlock)?.level
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+            .horizontalScroll(rememberScrollState())
+            .testTag("editor-toolbar"),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolbarButton(Icons.Rounded.Title, R.string.cd_block_title) {
-            onAdd(TitleBlock(level = 1))
-        }
-        ToolbarButton(Icons.Rounded.Title, R.string.cd_block_subtitle) {
-            onAdd(TitleBlock(level = 2))
-        }
-        ToolbarButton(Icons.AutoMirrored.Rounded.Subject, R.string.cd_block_paragraph) {
-            onAdd(ParagraphBlock())
-        }
-        ToolbarButton(Icons.Rounded.CheckBox, R.string.cd_block_task) {
-            onAdd(TaskBlock())
-        }
-        ToolbarButton(Icons.Rounded.UnfoldMore, R.string.cd_block_toggle) {
-            onAdd(ToggleBlock())
-        }
-        ToolbarButton(Icons.Rounded.FormatQuote, R.string.cd_block_quote) {
-            onAdd(QuoteBlock())
-        }
-        ToolbarButton(Icons.Rounded.AddPhotoAlternate, R.string.cd_attach_image) {
-            onAttachImage()
-        }
+        ToolbarTextButton(
+            label = stringResource(R.string.editor_h1),
+            descriptionRes = R.string.cd_block_title,
+            active = activeTitleLevel == 1,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.testTag("toolbar-h1"),
+        ) { onAdd(TitleBlock(level = 1)) }
+        ToolbarTextButton(
+            label = stringResource(R.string.editor_h2),
+            descriptionRes = R.string.cd_block_subtitle,
+            active = activeTitleLevel == 2,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.testTag("toolbar-h2"),
+        ) { onAdd(TitleBlock(level = 2)) }
+        ToolbarButton(
+            Icons.AutoMirrored.Rounded.Subject,
+            R.string.cd_block_paragraph,
+            active = activeBlock is ParagraphBlock,
+        ) { onAdd(ParagraphBlock()) }
+        ToolbarButton(
+            Icons.Rounded.CheckBox,
+            R.string.cd_block_task,
+            active = activeBlock is TaskBlock,
+        ) { onAdd(TaskBlock()) }
+        ToolbarButton(
+            Icons.Rounded.UnfoldMore,
+            R.string.cd_block_toggle,
+            active = activeBlock is ToggleBlock,
+        ) { onAdd(ToggleBlock()) }
+        ToolbarButton(
+            Icons.Rounded.FormatQuote,
+            R.string.cd_block_quote,
+            active = activeBlock is QuoteBlock,
+        ) { onAdd(QuoteBlock()) }
+        ToolbarButton(
+            Icons.Rounded.AddPhotoAlternate,
+            R.string.cd_attach_image,
+            active = activeBlock is AttachmentBlock,
+        ) { onAttachImage() }
+    }
+}
+
+@Composable
+private fun ToolbarTextButton(
+    label: String,
+    descriptionRes: Int,
+    active: Boolean,
+    style: androidx.compose.ui.text.TextStyle,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                else Color.Transparent,
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag("editor-toolbar-button"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = style,
+            color = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -537,16 +728,20 @@ private fun EditorToolbar(
 private fun ToolbarButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     descriptionRes: Int,
+    active: Boolean = false,
     onClick: () -> Unit,
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier
+            .size(48.dp)
+            .testTag("editor-toolbar-button"),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = stringResource(descriptionRes),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -783,18 +978,47 @@ private fun BlockTextField(
             }
         }
     }
+    val requester = remember { BringIntoViewRequester() }
+    var fieldValue by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    var cursorRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    LaunchedEffect(value) {
+        if (fieldValue.text != value) {
+            val cursor = fieldValue.selection.start.coerceIn(0, value.length)
+            fieldValue = TextFieldValue(value, TextRange(cursor))
+        }
+    }
+    // After every keystroke/Enter the cursor rect is already valid: keep it above the IME and
+    // below the formatting toolbar, even in very long notes.
+    LaunchedEffect(fieldValue.text, fieldValue.selection) {
+        withFrameNanos { }
+        cursorRect?.let { rect -> runCatching { requester.bringIntoView(rect) } }
+    }
+
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
+        value = fieldValue,
+        onValueChange = { updated ->
+            fieldValue = updated
+            onValueChange(updated.text)
+        },
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged { state -> if (state.isFocused) onFocus() },
+            .bringIntoViewRequester(requester)
+            .onFocusChanged { state -> if (state.isFocused) onFocus() }
+            .testTag("editor-block-field"),
         textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         visualTransformation = transformation,
+        onTextLayout = { layout ->
+            val cursor = fieldValue.selection.end
+                .coerceIn(0, layout.layoutInput.text.length)
+            cursorRect = layout.getCursorRect(cursor)
+        },
         decorationBox = { innerTextField ->
             Box {
-                if (value.isEmpty()) {
+                if (fieldValue.text.isEmpty()) {
                     Text(
                         text = placeholder,
                         style = textStyle,
@@ -880,6 +1104,7 @@ private fun AttachmentCard(
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (block.previewText.isNotBlank()) {
@@ -942,59 +1167,97 @@ private fun AttachmentCard(
                         maxLines = if (expanded) Int.MAX_VALUE else 6,
                         overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(onClick = { expanded = !expanded }) {
-                            Text(
-                                stringResource(
-                                    if (expanded) R.string.attachment_collapse
-                                    else R.string.attachment_expand,
-                                ),
-                            )
-                        }
-                        TextButton(
-                            onClick = {
-                                copyToClipboard(context, label, block.previewText)
-                                copied = true
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ContentCopy,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(
-                                    if (copied) R.string.attachment_copied
-                                    else R.string.attachment_copy,
-                                ),
-                            )
-                        }
-                        TextButton(
-                            onClick = {
-                                draft = block.previewText
-                                editing = true
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.attachment_edit))
-                        }
-                    }
+                    AttachmentActionsRow(
+                        expanded = expanded,
+                        copied = copied,
+                        onToggleExpand = { expanded = !expanded },
+                        onCopy = {
+                            copyToClipboard(context, label, block.previewText)
+                            copied = true
+                        },
+                        onEdit = {
+                            draft = block.previewText
+                            editing = true
+                        },
+                    )
                 }
             } else {
                 Spacer(Modifier.height(10.dp))
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AttachmentActionsRow(
+    expanded: Boolean,
+    copied: Boolean,
+    onToggleExpand: () -> Unit,
+    onCopy: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .testTag("attachment-actions"),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+        maxItemsInEachRow = 3,
+    ) {
+        AttachmentActionButton(
+            label = stringResource(
+                if (expanded) R.string.attachment_view_less else R.string.attachment_view_all,
+            ),
+            icon = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+            tag = "attachment-action-view",
+            onClick = onToggleExpand,
+        )
+        AttachmentActionButton(
+            label = stringResource(
+                if (copied) R.string.attachment_copied_short else R.string.attachment_copy_short,
+            ),
+            icon = Icons.Rounded.ContentCopy,
+            tag = "attachment-action-copy",
+            onClick = onCopy,
+        )
+        AttachmentActionButton(
+            label = stringResource(R.string.attachment_edit_short),
+            icon = Icons.Rounded.Edit,
+            tag = "attachment-action-edit",
+            onClick = onEdit,
+        )
+    }
+}
+
+@Composable
+private fun AttachmentActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tag: String,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .testTag(tag),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = label,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

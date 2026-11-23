@@ -50,10 +50,9 @@
 
     <string name="settings_section_integrations">Integraciones</string>
     <string name="settings_connections_title">Conexiones avanzadas</string>
-    <string name="settings_connections_subtitle">Sincronización y servidores, oculto por defecto</string>
+    <string name="settings_connections_subtitle">Sincronización y respaldo</string>
     <string name="settings_connection_drive">Sincronización con Google Drive</string>
     <string name="settings_connection_wifi">Transferencia por Wi-Fi</string>
-    <string name="settings_connection_mcp">Servidor MCP</string>
     <string name="settings_coming_soon">Próximamente</string>
 
     <string name="settings_section_pro">Kribo Pro</string>
@@ -150,6 +149,33 @@
     <string name="cd_block_task">Insertar tarea</string>
     <string name="cd_block_toggle">Insertar desplegable</string>
     <string name="cd_block_quote">Insertar cita</string>
+
+    <string name="folder_general">General</string>
+    <string name="cd_delete_note">Eliminar nota</string>
+    <string name="editor_move_note_title">Mover a carpeta</string>
+    <string name="editor_h1">H1</string>
+    <string name="editor_h2">H2</string>
+    <string name="attachment_view_all">Ver todo</string>
+    <string name="attachment_view_less">Ver menos</string>
+    <string name="attachment_copy_short">Copiar</string>
+    <string name="attachment_copied_short">Copiado</string>
+    <string name="attachment_edit_short">Editar</string>
+    <string name="home_word_count">%1$d palabras</string>
+    <string name="home_selection_count">%1$d seleccionadas</string>
+    <string name="home_select_all">Seleccionar todas</string>
+    <string name="home_selection_close">Cerrar</string>
+    <string name="home_bulk_move">Mover</string>
+    <string name="home_bulk_pin">Fijar</string>
+    <string name="home_bulk_unpin">Desfijar</string>
+    <string name="home_bulk_delete">Eliminar</string>
+    <string name="home_bulk_delete_title">¿Eliminar las notas seleccionadas?</string>
+    <string name="home_bulk_delete_body">Se eliminarán %1$d notas de forma permanente de este dispositivo.</string>
+    <string name="home_move_title">Mover a carpeta</string>
+    <string name="settings_privacy_title">Política de privacidad</string>
+    <string name="settings_privacy_subtitle">Cómo Kribo protege tus notas</string>
+    <string name="settings_licenses_title">Licencias de código abierto</string>
+    <string name="settings_licenses_subtitle">PP-OCRv5, UVDoc, ML Kit y más</string>
+    <string name="licenses_title">Licencias de código abierto</string>
 
     <string name="settings_section_data">Datos</string>
     <string name="settings_import_title">Importar notas</string>

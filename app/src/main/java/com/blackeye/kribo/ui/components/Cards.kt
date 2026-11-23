@@ -1,6 +1,8 @@
 package com.blackeye.kribo.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,13 +51,17 @@ import com.blackeye.kribo.ui.home.NoteListItem
 import java.io.File
 
 /** High-density row for the compact Home list, separated by hairline dividers. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CompactNoteRow(
     item: NoteListItem,
     query: String,
     folderName: String?,
     folderColor: Color,
+    selectionMode: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit,
     onTogglePin: () -> Unit,
 ) {
@@ -70,10 +77,21 @@ fun CompactNoteRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(role = Role.Button, onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else Color.Transparent,
+            )
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selectionMode) {
+            Checkbox(checked = selected, onCheckedChange = null)
+        }
         Box(
             modifier = Modifier
                 .width(3.dp)
@@ -170,13 +188,17 @@ fun CompactNoteRow(
 }
 
 /** Rounded Bento tile for the 2-column staggered grid. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BentoNoteCard(
     item: NoteListItem,
     query: String,
     folderName: String?,
     folderColor: Color,
+    selectionMode: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val note = item.note
@@ -192,12 +214,30 @@ fun BentoNoteCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(role = Role.Button, onClick = onClick),
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         shape = shape,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, folderColor.copy(alpha = 0.55f)),
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary
+            else folderColor.copy(alpha = 0.55f),
+        ),
     ) {
         Column {
+            if (selectionMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, top = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Checkbox(checked = selected, onCheckedChange = null)
+                }
+            }
             if (item.attachmentPath != null) {
                 AsyncImage(
                     model = File(item.attachmentPath),

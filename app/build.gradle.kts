@@ -46,8 +46,8 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -161,17 +161,25 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.document.scanner)
+    implementation(libs.mlkit.text.recognition)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.kotlinx.coroutines.test)
 
+    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 if (!hasReleaseSigning) {

@@ -53,6 +53,40 @@ class AttachmentStore(private val attachmentsRoot: File) {
         }
     }
 
+    /** Copies the scanner output verbatim to a work directory (no recompression before UVDoc). */
+    suspend fun copyScanSource(
+        contentResolver: ContentResolver,
+        uri: Uri,
+        destinationDir: File,
+    ): File? = withContext(Dispatchers.IO) {
+        if (!destinationDir.isDirectory && !destinationDir.mkdirs() && !destinationDir.isDirectory) {
+            return@withContext null
+        }
+        val target = uniqueFile(destinationDir, "source-${System.currentTimeMillis()}.jpg")
+        runCatching {
+            contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+        }.getOrNull()
+        if (target.isFile && target.length() > 0L) target else {
+            target.delete()
+            null
+        }
+    }
+
+    /** Moves a page already processed by UVDoc/SpineSplitter without touching its pixels. */
+    fun saveProcessedPage(noteId: Long, source: File, pageNumber: Int): File? {
+        if (!source.isFile || source.length() <= 0L) return null
+        val target = uniqueFile(
+            noteDir(noteId),
+            "scan-${System.currentTimeMillis()}-${pageNumber}.jpg",
+        )
+        return runCatching {
+            source.copyTo(target, overwrite = false)
+            target.takeIf { it.isFile && it.length() > 0L }
+        }.getOrNull().also { if (it == null) target.delete() }
+    }
+
     suspend fun saveScanPage(
         contentResolver: ContentResolver,
         noteId: Long,

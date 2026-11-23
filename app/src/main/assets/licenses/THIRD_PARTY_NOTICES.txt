@@ -1,0 +1,35 @@
+Kribo · Open source notices
+===========================
+
+PP-OCRv5 (PaddleOCR / RapidOCR)
+-------------------------------
+Detection model: ch_PP-OCRv5_det_mobile.onnx
+Recognition model: latin_PP-OCRv5_rec_mobile.onnx
+Dictionary: latin_ppocrv5_dict.txt
+Origin: PaddleOCR / RapidOCR v3.10.0
+License: Apache License 2.0
+https://github.com/PaddlePaddle/PaddleOCR
+https://github.com/RapidAI/RapidOCR
+
+UVDoc (document unwarping)
+--------------------------
+Model: UVDoc_grid.onnx
+Purpose: flattens curved book pages before OCR.
+License: see the upstream UVDoc model distribution terms.
+https://github.com/tanguymagne/UVDoc
+
+ML Kit Text Recognition V2
+--------------------------
+Bundled Latin text recognition model used as the offline OCR fallback.
+License: Google ML Kit terms of service.
+https://developers.google.com/ml-kit/terms
+
+ONNX Runtime for Android
+------------------------
+Runs PP-OCRv5 and UVDoc entirely on the device.
+License: MIT License.
+https://github.com/microsoft/onnxruntime
+
+AndroidX, Jetpack Compose, Room, Coil, Kotlin and kotlinx.coroutines
+--------------------------------------------------------------------
+Licensed under the Apache License 2.0 and the Kotlin/AndroidX terms.

@@ -28,11 +28,14 @@ import kotlinx.coroutines.withContext
  *  4. CTC de 504 clases con el diccionario latino incrustado.
  *  5. [OcrLayoutSorter] ordena los renglones antes de unirlos.
  *
- * Si faltan los modelos, la firma SHA-256 no coincide o ONNX falla, el motor
- * devuelve null: no hay respaldo pesado ni se carga nada en el arranque.
+ * Si faltan los modelos, la firma SHA-256 no coincide o ONNX falla, se usa el
+ * respaldo ML Kit empaquetado (ScanOffline handoff). Un resultado ONNX corto
+ * también se compara contra ML Kit para no perder párrafos en páginas densas o
+ * curvadas. Nada se carga en el arranque: el motor se crea al primer escaneo.
  */
 class PaddleOcrEngine(
     context: Context,
+    private val fallback: OcrEngine = MlKitBundledOcrEngine(),
 ) : OcrEngine {
 
     private val appContext = context.applicationContext
@@ -51,12 +54,19 @@ class PaddleOcrEngine(
 
     override suspend fun recognize(file: File): String? = withContext(Dispatchers.Default) {
         if (!file.isFile) return@withContext null
-        val ready = ensureSessions() ?: return@withContext null
+        val ready = ensureSessions()
+        if (ready == null) return@withContext recognizeWithFallback(file)
 
-        runCatching { recognizeOnnx(file, ready) }
+        val onnxText = runCatching { recognizeOnnx(file, ready) }
             .getOrNull()
             ?.let(OcrTextSanitizer::cleanForOcr)
             ?.takeIf { it.isNotBlank() }
+        if (onnxText != null && onnxText.length >= MIN_TRUSTED_CHARS) {
+            return@withContext onnxText
+        }
+        // Short/failed ONNX output: give ML Kit a chance and keep the richer text.
+        val fallbackText = runCatching { fallback.recognize(file) }.getOrNull()
+        return@withContext betterText(onnxText, fallbackText)
     }
 
     override fun close() {
@@ -67,6 +77,23 @@ class PaddleOcrEngine(
             }
             sessions = null
         }
+        runCatching { fallback.close() }
+    }
+
+    private suspend fun recognizeWithFallback(file: File): String? =
+        runCatching { fallback.recognize(file) }.getOrNull()
+
+    /** Prose-heavy text wins over page numbers or empty detections. */
+    private fun betterText(primary: String?, secondary: String?): String? {
+        if (primary.isNullOrBlank()) return secondary
+        if (secondary.isNullOrBlank()) return primary
+        return if (textQuality(secondary) > textQuality(primary)) secondary else primary
+    }
+
+    private fun textQuality(text: String): Int {
+        val letters = text.count { it.isLetter() }
+        val words = text.split(Regex("\\s+")).count { it.length >= 2 }
+        return letters + words * 3
     }
 
     private fun ensureSessions(): Sessions? = synchronized(lock) {
@@ -386,5 +413,6 @@ class PaddleOcrEngine(
         const val UNCLIP_RATIO = 1.55f
         const val REC_HEIGHT = 48
         const val REC_MAX_WIDTH = 3200
+        private const val MIN_TRUSTED_CHARS = 80
     }
 }

@@ -10,6 +10,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +44,9 @@ import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ViewList
@@ -52,6 +57,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,6 +75,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
@@ -120,6 +127,12 @@ fun HomeScreen(
     var folderDraft by remember { mutableStateOf<FolderDraft?>(null) }
     var draftName by rememberSaveable { mutableStateOf("") }
     var captureText by rememberSaveable { mutableStateOf("") }
+    var showBulkDelete by remember { mutableStateOf(false) }
+    var showMovePicker by remember { mutableStateOf(false) }
+    val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
+    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val selectedNotes = remember(notes, selectedIds) { notes.filter { it.note.id in selectedIds } }
+    val allSelectedPinned = selectedNotes.isNotEmpty() && selectedNotes.all { it.note.isPinned }
 
     val folderNames = remember(folders) { folders.associate { it.id to it.name } }
     val folderColors = remember(folders) { folders.associate { it.id to it.color() } }
@@ -183,64 +196,106 @@ fun HomeScreen(
     }
 
     AppScreen(
-        title = stringResource(R.string.app_name),
+        title = if (selectionMode) {
+            stringResource(R.string.home_selection_count, selectedIds.size)
+        } else {
+            stringResource(R.string.app_name)
+        },
         scrollable = false,
         actions = {
-            IconButton(
-                onClick = {
-                    uiPreferences.setHomeLayout(
-                        if (homeLayout == HomeLayout.COMPACT) HomeLayout.BENTO else HomeLayout.COMPACT,
+            if (selectionMode) {
+                IconButton(
+                    onClick = { viewModel.selectAll(notes.map { it.note.id }) },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("home-select-all"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SelectAll,
+                        contentDescription = stringResource(R.string.home_select_all),
                     )
-                },
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    imageVector = if (homeLayout == HomeLayout.COMPACT) {
-                        Icons.Rounded.GridView
-                    } else {
-                        Icons.Rounded.ViewList
+                }
+                IconButton(
+                    onClick = viewModel::clearSelection,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("home-selection-close"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.home_selection_close),
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = {
+                        uiPreferences.setHomeLayout(
+                            if (homeLayout == HomeLayout.COMPACT) HomeLayout.BENTO else HomeLayout.COMPACT,
+                        )
                     },
-                    contentDescription = stringResource(
-                        if (homeLayout == HomeLayout.COMPACT) R.string.cd_toggle_bento
-                        else R.string.cd_toggle_list,
-                    ),
-                )
-            }
-            IconButton(
-                onClick = { importLauncher.launch(arrayOf("*/*")) },
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.FileOpen,
-                    contentDescription = stringResource(R.string.cd_import),
-                )
-            }
-            IconButton(
-                onClick = onSettings,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = stringResource(R.string.cd_settings),
-                )
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = if (homeLayout == HomeLayout.COMPACT) {
+                            Icons.Rounded.GridView
+                        } else {
+                            Icons.Rounded.ViewList
+                        },
+                        contentDescription = stringResource(
+                            if (homeLayout == HomeLayout.COMPACT) R.string.cd_toggle_bento
+                            else R.string.cd_toggle_list,
+                        ),
+                    )
+                }
+                IconButton(
+                    onClick = { importLauncher.launch(arrayOf("*/*")) },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FileOpen,
+                        contentDescription = stringResource(R.string.cd_import),
+                    )
+                }
+                IconButton(
+                    onClick = onSettings,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = stringResource(R.string.cd_settings),
+                    )
+                }
             }
         },
         footer = {
-            QuickCaptureBar(
-                text = captureText,
-                onTextChange = { captureText = it },
-                onSend = {
-                    if (captureText.isNotBlank()) {
-                        viewModel.quickCapture(captureText) { captureText = "" }
-                    }
-                },
-                onOpenEditor = {
-                    viewModel.createNote { noteId -> onOpenNote(noteId, "") }
-                },
-                onScan = { launchScanner() },
-                freeScansLeft = if (billingState.owned) null else freeScansLeft,
-                largeFont = largeFont,
-            )
+            if (selectionMode) {
+                BulkSelectionBar(
+                    anyPinned = allSelectedPinned,
+                    onMove = { showMovePicker = true },
+                    onPin = {
+                        viewModel.setPinnedFor(selectedIds, !allSelectedPinned)
+                    },
+                    onDelete = { showBulkDelete = true },
+                )
+            } else {
+                QuickCaptureBar(
+                    text = captureText,
+                    onTextChange = { value ->
+                        captureText = value.replace(Regex("\\n{3,}"), "\n\n")
+                    },
+                    onSend = {
+                        if (captureText.isNotBlank()) {
+                            viewModel.quickCapture(captureText) { captureText = "" }
+                        }
+                    },
+                    onOpenEditor = {
+                        viewModel.createNote { noteId -> onOpenNote(noteId, "") }
+                    },
+                    onScan = { launchScanner() },
+                    freeScansLeft = if (billingState.owned) null else freeScansLeft,
+                    largeFont = largeFont,
+                )
+            }
         },
     ) {
         OutlinedTextField(
@@ -341,7 +396,16 @@ fun HomeScreen(
                             folderName = item.note.folderId?.let(folderNames::get),
                             folderColor = item.note.folderId?.let(folderColors::get)
                                 ?: MaterialTheme.colorScheme.outline,
-                            onClick = { onOpenNote(item.note.id, query) },
+                            selectionMode = selectionMode,
+                            selected = item.note.id in selectedIds,
+                            onClick = {
+                                if (selectionMode) {
+                                    viewModel.toggleSelection(item.note.id)
+                                } else {
+                                    onOpenNote(item.note.id, query)
+                                }
+                            },
+                            onLongClick = { viewModel.startSelection(item.note.id) },
                             onDelete = { notePendingDelete = item.note },
                             onTogglePin = { viewModel.togglePinned(item.note) },
                         )
@@ -362,10 +426,74 @@ fun HomeScreen(
                             folderName = item.note.folderId?.let(folderNames::get),
                             folderColor = item.note.folderId?.let(folderColors::get)
                                 ?: MaterialTheme.colorScheme.outline,
-                            onClick = { onOpenNote(item.note.id, query) },
+                            selectionMode = selectionMode,
+                            selected = item.note.id in selectedIds,
+                            onClick = {
+                                if (selectionMode) {
+                                    viewModel.toggleSelection(item.note.id)
+                                } else {
+                                    onOpenNote(item.note.id, query)
+                                }
+                            },
+                            onLongClick = { viewModel.startSelection(item.note.id) },
                         )
                     }
                     item { Spacer(Modifier.height(12.dp)) }
+                }
+            }
+        }
+    }
+
+    if (showBulkDelete) {
+        AppModal(
+            onDismissRequest = { showBulkDelete = false },
+            title = stringResource(R.string.home_bulk_delete_title),
+            dismissLabel = stringResource(R.string.action_cancel),
+            confirmLabel = stringResource(R.string.action_delete),
+            onConfirm = {
+                showBulkDelete = false
+                viewModel.deleteNotes(selectedIds)
+            },
+        ) {
+            Text(
+                text = stringResource(R.string.home_bulk_delete_body, selectedIds.size),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (showMovePicker) {
+        AppModal(
+            onDismissRequest = { showMovePicker = false },
+            title = stringResource(R.string.home_move_title),
+            dismissLabel = stringResource(R.string.action_cancel),
+        ) {
+            folders.forEach { folder ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable {
+                            viewModel.moveNotesToFolder(selectedIds, folder.id)
+                            showMovePicker = false
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(folder.color()),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = folder.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -542,7 +670,7 @@ fun HomeScreen(
             },
         ) {
             Text(
-                text = stringResource(R.string.paywall_body, viewModel.freeScansLeft.value),
+                text = stringResource(R.string.paywall_body, freeScansLeft),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -603,8 +731,75 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun QuickCaptureBar(
+internal fun BulkSelectionBar(
+    anyPinned: Boolean,
+    onMove: () -> Unit,
+    onPin: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home-bulk-bar"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        BulkActionButton(
+            icon = Icons.Rounded.Folder,
+            label = stringResource(R.string.home_bulk_move),
+            tag = "home-bulk-move",
+            onClick = onMove,
+        )
+        BulkActionButton(
+            icon = Icons.Rounded.PushPin,
+            label = stringResource(
+                if (anyPinned) R.string.home_bulk_unpin else R.string.home_bulk_pin,
+            ),
+            tag = "home-bulk-pin",
+            onClick = onPin,
+        )
+        BulkActionButton(
+            icon = Icons.Rounded.Delete,
+            label = stringResource(R.string.home_bulk_delete),
+            tag = "home-bulk-delete",
+            onClick = onDelete,
+        )
+    }
+}
+
+@Composable
+private fun BulkActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tag: String,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .testTag(tag),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = label,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+internal fun QuickCaptureBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -613,7 +808,10 @@ private fun QuickCaptureBar(
     freeScansLeft: Int?,
     largeFont: Boolean,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val wordCount = remember(text) {
+        if (text.isBlank()) 0 else text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+    }
+    Column(modifier = Modifier.fillMaxWidth().testTag("home-quick-capture")) {
         if (freeScansLeft != null) {
             Text(
                 text = stringResource(R.string.home_free_scans, freeScansLeft),
@@ -622,10 +820,23 @@ private fun QuickCaptureBar(
                 modifier = Modifier.padding(bottom = 6.dp),
             )
         }
+        if (text.length > 120) {
+            Text(
+                text = stringResource(R.string.home_word_count, wordCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .testTag("home-word-count"),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Bottom,
         ) {
             Surface(
                 modifier = Modifier.weight(1f),
@@ -638,24 +849,25 @@ private fun QuickCaptureBar(
             ) {
                 Row(
                     modifier = Modifier.heightIn(min = 54.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Bottom,
                 ) {
                     BasicTextField(
                         value = text,
                         onValueChange = onTextChange,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(start = 14.dp, end = 4.dp),
-                        singleLine = true,
+                            .padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+                            .testTag("home-quick-capture-field"),
+                        singleLine = false,
+                        minLines = 1,
+                        maxLines = 5,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface,
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { onSend() }),
                         decorationBox = { inner ->
                             Box {
-                                if (text.isEmpty()) {
+                                if (text.isBlank()) {
                                     Text(
                                         text = stringResource(R.string.home_quick_capture_placeholder),
                                         style = MaterialTheme.typography.bodyLarge,
@@ -670,7 +882,9 @@ private fun QuickCaptureBar(
                     )
                     IconButton(
                         onClick = onOpenEditor,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("home-quick-editor"),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.OpenInFull,
@@ -682,7 +896,9 @@ private fun QuickCaptureBar(
                     IconButton(
                         onClick = onSend,
                         enabled = text.isNotBlank(),
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("home-quick-send"),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Send,
@@ -700,7 +916,9 @@ private fun QuickCaptureBar(
 
             FilledIconButton(
                 onClick = onScan,
-                modifier = Modifier.size(if (largeFont) 62.dp else 56.dp),
+                modifier = Modifier
+                    .size(if (largeFont) 62.dp else 56.dp)
+                    .testTag("home-quick-scan"),
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,

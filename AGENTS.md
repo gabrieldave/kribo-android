@@ -38,6 +38,17 @@ Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CE
 - El motor PP-OCRv5 (`ocr/OcrSubsystem.kt`) se carga de forma diferida solo al escanear: prohibido tocar ONNX, modelos o ML Kit en `Application.onCreate`/`MainActivity.onCreate`.
 - Presupuesto de arranque en frío: **< 250 ms** (objetivo 120-160 ms).
 
+## 3.1 Anti-Squish UI Gate (obligatoria)
+
+- Prohibido colocar **3 o más botones de texto** en un `Row` sin envoltura. Usa `FlowRow`
+  (`ExperimentalLayoutApi`), etiquetas cortas o un menú `⋮`.
+- Todo **botón, chip y tab** debe declarar `maxLines = 1`, `softWrap = false` y
+  `overflow = TextOverflow.Ellipsis`. Nunca permitir que un texto se apile letra por letra.
+- Ninguna tarea UI se considera cerrada sin ejecutar `./scripts/ui-audit.sh` en el Pixel
+  con la pantalla afectada abierta, en español a `100%` y `200%` de escala de fuente.
+  Inspecciona `/tmp/pixel_live.png` antes de firmar la entrega.
+- Al terminar la auditoría vuelve siempre a `adb shell settings put system font_scale 1.0`.
+
 ## 4. Idioma
 
 - `res/values/strings.xml` = inglés (base) y `res/values-es/strings.xml` = español.

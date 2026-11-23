@@ -1,5 +1,8 @@
 package com.blackeye.kribo.ui.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -26,13 +29,14 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FileOpen
-import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wifi
@@ -71,6 +75,7 @@ import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.home.TransferPhase
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.preferences.UiPreferences
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -80,6 +85,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onPurchase: () -> Unit,
     onRestorePurchases: () -> Unit,
+    onLicenses: () -> Unit,
 ) {
     val context = LocalContext.current
     var connectionsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -244,11 +250,6 @@ fun SettingsScreen(
                         icon = Icons.Rounded.Wifi,
                         title = stringResource(R.string.settings_connection_wifi),
                     )
-                    SettingsDivider()
-                    ConnectionRow(
-                        icon = Icons.Rounded.Hub,
-                        title = stringResource(R.string.settings_connection_mcp),
-                    )
                 }
             }
         }
@@ -307,6 +308,23 @@ fun SettingsScreen(
                 text = stringResource(R.string.settings_about_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            AboutLinkRow(
+                icon = Icons.Rounded.PrivacyTip,
+                title = stringResource(R.string.settings_privacy_title),
+                subtitle = stringResource(R.string.settings_privacy_subtitle),
+                onClick = { openPrivacyPolicy(context) },
+            )
+            SettingsDivider()
+            AboutLinkRow(
+                icon = Icons.Rounded.Description,
+                title = stringResource(R.string.settings_licenses_title),
+                subtitle = stringResource(R.string.settings_licenses_subtitle),
+                onClick = {
+                    showAbout = false
+                    onLicenses()
+                },
             )
         }
     }
@@ -406,6 +424,67 @@ fun SettingsScreen(
         }
 
         TransferPhase.IDLE -> Unit
+    }
+}
+
+@Composable
+private fun AboutLinkRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun openPrivacyPolicy(context: Context) {
+    val language = AppLanguage.current()
+    val spanish = language == AppLanguage.SPANISH ||
+        (language == AppLanguage.SYSTEM && Locale.getDefault().language.equals("es", ignoreCase = true))
+    val url = if (spanish) {
+        "https://kribo.iareal.net/es/privacy"
+    } else {
+        "https://kribo.iareal.net/privacy"
+    }
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 }
 

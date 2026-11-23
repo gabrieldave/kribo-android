@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blackeye.kribo.data.AttachmentEntity
+import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.NoteRepository
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
@@ -49,20 +50,29 @@ class NoteEditorViewModel(
     var imageError by mutableStateOf(false)
         private set
 
+    var folderId by mutableStateOf<Long?>(null)
+        private set
+
+    var folders by mutableStateOf<List<FolderEntity>>(emptyList())
+        private set
+
     private var saveJob: Job? = null
 
     init {
         viewModelScope.launch {
-            val (note, loadedBlocks, loadedAttachments) = withContext(Dispatchers.IO) {
-                Triple(
-                    repository.getNote(noteId),
-                    repository.getBlocks(noteId),
-                    repository.getAttachments(noteId),
+            val loaded = withContext(Dispatchers.IO) {
+                Loaded(
+                    note = repository.getNote(noteId),
+                    blocks = repository.getBlocks(noteId),
+                    attachments = repository.getAttachments(noteId),
+                    folders = repository.getAllFolders(),
                 )
             }
-            blocks = loadedBlocks
-            attachments = loadedAttachments
-            isPinned = note?.isPinned ?: false
+            blocks = loaded.blocks
+            attachments = loaded.attachments
+            isPinned = loaded.note?.isPinned ?: false
+            folderId = loaded.note?.folderId
+            folders = loaded.folders
             isLoading = false
         }
     }
@@ -169,6 +179,21 @@ class NoteEditorViewModel(
         }
     }
 
+    fun moveToFolder(targetFolderId: Long?) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.moveToFolder(noteId, targetFolderId) }
+            folderId = targetFolderId
+        }
+    }
+
+    fun deleteNote(onDeleted: () -> Unit) {
+        saveJob?.cancel()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.deleteNote(noteId) }
+            onDeleted()
+        }
+    }
+
     fun togglePinned() {
         isPinned = !isPinned
         viewModelScope.launch(Dispatchers.IO) {
@@ -205,6 +230,13 @@ class NoteEditorViewModel(
             repository.saveBlocks(noteId, snapshot)
         }
     }
+
+    private data class Loaded(
+        val note: com.blackeye.kribo.data.NoteEntity?,
+        val blocks: List<NoteBlock>,
+        val attachments: List<AttachmentEntity>,
+        val folders: List<FolderEntity>,
+    )
 
     companion object {
         const val SAVE_DEBOUNCE_MS = 300L

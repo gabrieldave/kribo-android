@@ -50,10 +50,9 @@
 
     <string name="settings_section_integrations">Integrations</string>
     <string name="settings_connections_title">Advanced connections</string>
-    <string name="settings_connections_subtitle">Sync and servers, collapsed by default</string>
+    <string name="settings_connections_subtitle">Sync &amp; backup</string>
     <string name="settings_connection_drive">Google Drive sync</string>
     <string name="settings_connection_wifi">Wi-Fi transfer</string>
-    <string name="settings_connection_mcp">MCP server</string>
     <string name="settings_coming_soon">Coming soon</string>
 
     <string name="settings_section_pro">Kribo Pro</string>
@@ -150,6 +149,33 @@
     <string name="cd_block_task">Insert task</string>
     <string name="cd_block_toggle">Insert toggle</string>
     <string name="cd_block_quote">Insert quote</string>
+
+    <string name="folder_general">General</string>
+    <string name="cd_delete_note">Delete note</string>
+    <string name="editor_move_note_title">Move to folder</string>
+    <string name="editor_h1">H1</string>
+    <string name="editor_h2">H2</string>
+    <string name="attachment_view_all">View all</string>
+    <string name="attachment_view_less">View less</string>
+    <string name="attachment_copy_short">Copy</string>
+    <string name="attachment_copied_short">Copied</string>
+    <string name="attachment_edit_short">Edit</string>
+    <string name="home_word_count">%1$d words</string>
+    <string name="home_selection_count">%1$d selected</string>
+    <string name="home_select_all">Select all</string>
+    <string name="home_selection_close">Close</string>
+    <string name="home_bulk_move">Move</string>
+    <string name="home_bulk_pin">Pin</string>
+    <string name="home_bulk_unpin">Unpin</string>
+    <string name="home_bulk_delete">Delete</string>
+    <string name="home_bulk_delete_title">Delete selected notes?</string>
+    <string name="home_bulk_delete_body">%1$d notes will be permanently removed from this device.</string>
+    <string name="home_move_title">Move to folder</string>
+    <string name="settings_privacy_title">Privacy policy</string>
+    <string name="settings_privacy_subtitle">How Kribo protects your notes</string>
+    <string name="settings_licenses_title">Open source licenses</string>
+    <string name="settings_licenses_subtitle">PP-OCRv5, UVDoc, ML Kit and more</string>
+    <string name="licenses_title">Open source licenses</string>
 
     <string name="settings_section_data">Data</string>
     <string name="settings_import_title">Import notes</string>
