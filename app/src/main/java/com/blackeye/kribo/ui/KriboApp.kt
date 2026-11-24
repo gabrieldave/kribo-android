@@ -1,6 +1,8 @@
 package com.blackeye.kribo.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -15,6 +17,8 @@ import com.blackeye.kribo.ui.home.HomeScreen
 import com.blackeye.kribo.ui.home.LibraryViewModel
 import com.blackeye.kribo.ui.note.NoteEditorScreen
 import com.blackeye.kribo.ui.drive.DriveSyncScreen
+import com.blackeye.kribo.ui.onboarding.UserGuideScreen
+import com.blackeye.kribo.ui.onboarding.UserManualScreen
 import com.blackeye.kribo.ui.settings.LicensesScreen
 import com.blackeye.kribo.ui.transfer.WifiTransferScreen
 import com.blackeye.kribo.ui.settings.SettingsScreen
@@ -33,10 +37,23 @@ fun KriboApp(
         },
     )
 
+    val onboardingSeen by container.uiPreferences.onboardingSeen.collectAsStateWithLifecycle()
+
     NavHost(
         navController = navController,
-        startDestination = Routes.HOME,
+        startDestination = if (onboardingSeen) Routes.HOME else Routes.GUIDE,
     ) {
+        composable(Routes.GUIDE) {
+            UserGuideScreen(
+                onFinish = {
+                    container.uiPreferences.markOnboardingSeen()
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.GUIDE) { inclusive = true }
+                    }
+                },
+            )
+        }
+
         composable(Routes.HOME) {
             HomeScreen(
                 viewModel = library,
@@ -82,7 +99,13 @@ fun KriboApp(
                 onLicenses = { navController.navigate(Routes.LICENSES) },
                 onOpenWifi = { navController.navigate(Routes.WIFI) },
                 onOpenDrive = { navController.navigate(Routes.DRIVE) },
+                onManual = { navController.navigate(Routes.MANUAL) },
+                onRefreshBilling = { container.entitlementRepository.refresh() },
             )
+        }
+
+        composable(Routes.MANUAL) {
+            UserManualScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Routes.LICENSES) {

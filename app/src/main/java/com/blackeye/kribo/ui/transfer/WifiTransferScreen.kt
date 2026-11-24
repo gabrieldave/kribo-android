@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -50,6 +52,9 @@ import com.blackeye.kribo.R
 import com.blackeye.kribo.transfer.QrCode
 import com.blackeye.kribo.transfer.WifiTransferServer
 import com.blackeye.kribo.ui.components.AppScreen
+import com.blackeye.kribo.ui.components.TooltipIconButton
+import com.blackeye.kribo.ui.onboarding.GuideTopic
+import com.blackeye.kribo.ui.onboarding.GuideTopicModal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,6 +69,7 @@ fun WifiTransferScreen(
     val server = container.wifiTransferServer
     val state by server.state.collectAsStateWithLifecycle()
     var copied by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { server.stop() }
@@ -86,6 +92,15 @@ fun WifiTransferScreen(
             server.stop()
             onBack()
         },
+        actions = {
+            TooltipIconButton(
+                icon = Icons.AutoMirrored.Rounded.HelpOutline,
+                contentDescription = stringResource(R.string.cd_help),
+                tooltip = stringResource(R.string.cd_help),
+                onClick = { showHelp = true },
+                testTag = "wifi-help",
+            )
+        },
     ) {
         WifiTransferContent(
             state = state,
@@ -107,6 +122,10 @@ fun WifiTransferScreen(
                 }
             },
         )
+    }
+
+    if (showHelp) {
+        WifiHelpModal(onDismiss = { showHelp = false })
     }
 }
 
@@ -279,5 +298,36 @@ internal fun WifiTransferContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .padding(top = 1.dp)
+                        .size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.wifi_security_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun WifiHelpModal(onDismiss: () -> Unit) {
+    GuideTopicModal(topic = GuideTopic.WIFI_TRANSFER, onDismiss = onDismiss)
 }

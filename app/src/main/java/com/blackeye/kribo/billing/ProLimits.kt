@@ -24,7 +24,8 @@ object ProLimits {
     fun canUseTheme(theme: AppTheme, isPro: Boolean): Boolean =
         isPro || theme !in PRO_THEMES
 
-    fun canExportBackup(isPro: Boolean): Boolean = isPro
+    /** Free tier already includes PDF/Markdown/ZIP export; PRO is not required. */
+    fun canExportBackup(@Suppress("UNUSED_PARAMETER") isPro: Boolean): Boolean = true
 
     fun canUseWifi(isPro: Boolean): Boolean = isPro
 

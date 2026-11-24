@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PrivacyTip
@@ -52,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -100,6 +103,8 @@ fun SettingsScreen(
     onLicenses: () -> Unit,
     onOpenWifi: () -> Unit,
     onOpenDrive: () -> Unit,
+    onManual: () -> Unit,
+    onRefreshBilling: () -> Unit,
 ) {
     val context = LocalContext.current
     var connectionsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -112,6 +117,9 @@ fun SettingsScreen(
     val selectedTheme by uiPreferences.theme.collectAsStateWithLifecycle()
     val importState by library.importState.collectAsStateWithLifecycle()
     val backupState by library.backupState.collectAsStateWithLifecycle()
+
+    // Entering Settings always re-reads the localized Play price and current entitlements.
+    LaunchedEffect(Unit) { onRefreshBilling() }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -155,7 +163,6 @@ fun SettingsScreen(
                 icon = Icons.Rounded.Archive,
                 title = stringResource(R.string.settings_backup_title),
                 subtitle = stringResource(R.string.settings_backup_subtitle),
-                locked = !isPro,
                 onClick = {
                     if (ProLimits.canExportBackup(isPro)) {
                         backupLauncher.launch("kribo-backup-${System.currentTimeMillis()}.zip")
@@ -163,6 +170,16 @@ fun SettingsScreen(
                         paywallReason = PaywallReason.BACKUP_LOCKED
                     }
                 },
+            )
+        }
+
+        SectionLabel(stringResource(R.string.settings_section_help))
+        SettingsCard {
+            SettingsActionRow(
+                icon = Icons.AutoMirrored.Rounded.MenuBook,
+                title = stringResource(R.string.settings_manual_title),
+                subtitle = stringResource(R.string.settings_manual_subtitle),
+                onClick = onManual,
             )
         }
 
@@ -660,11 +677,14 @@ private fun CompactThemeGrid(
     onThemeSelected: (AppTheme) -> Unit,
     onLockedTheme: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        COMPACT_THEMES.chunked(3).forEach { rowThemes ->
+    // At large font scales the full "Obsidiana"/"Obsidian" label needs more room, so the
+    // grid falls back to two columns instead of clipping the word with an ellipsis.
+    val columns = if (LocalDensity.current.fontScale >= 1.3f) 2 else 3
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        COMPACT_THEMES.chunked(columns).forEach { rowThemes ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 rowThemes.forEach { theme ->
                     val locked = !isPro && theme in ProLimits.PRO_THEMES
@@ -719,7 +739,7 @@ private fun ThemeSwatchButton(
             )
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { this.selected = selected }
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
             .testTag("theme-${theme.id}"),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -729,28 +749,30 @@ private fun ThemeSwatchButton(
         ) {
             Text(
                 text = theme.compactLabel(),
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                ),
                 color = foreground,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.weight(1f, fill = false),
             )
             if (locked) {
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(3.dp))
                 Icon(
                     imageVector = Icons.Rounded.Lock,
                     contentDescription = stringResource(R.string.cd_pro_feature),
                     tint = accent,
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier.size(14.dp),
                 )
             } else if (selected) {
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(3.dp))
                 Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = null,
                     tint = accent,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
@@ -905,18 +927,19 @@ private fun ProCard(
                     enabled = billingState.formattedPrice != null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 52.dp),
+                        .heightIn(min = 52.dp)
+                        .testTag("settings-pro-cta"),
                 ) {
-                    val label = when {
-                        billingState.formattedPrice != null -> stringResource(
-                            R.string.settings_pro_price,
-                            billingState.formattedPrice,
-                        )
-
-                        billingState.connected -> stringResource(R.string.settings_pro_unavailable)
-                        else -> stringResource(R.string.billing_store_unavailable)
-                    }
-                    Text(label)
+                    // Neutral state while Play responds: never a hardcoded price.
+                    val label = billingState.formattedPrice?.let { price ->
+                        stringResource(R.string.settings_pro_price, price)
+                    } ?: stringResource(R.string.settings_pro_label)
+                    Text(
+                        text = label,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 TextButton(
                     onClick = onRestorePurchases,

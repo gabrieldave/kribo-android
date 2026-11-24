@@ -40,6 +40,20 @@ class NoteEditorViewModel(
 
     var focusedBlockId by mutableStateOf<String?>(null)
 
+    /** One-shot signal so a freshly inserted block grabs the keyboard and gets a soft pulse. */
+    var focusRequestId by mutableStateOf<String?>(null)
+        private set
+
+    /** Current note title, used to name exported files without hardcoded names. */
+    var noteTitle by mutableStateOf("")
+        private set
+
+    var canUndo by mutableStateOf(false)
+        private set
+
+    var canRedo by mutableStateOf(false)
+        private set
+
     /** Search term inherited from Home; drives auto-scroll and in-editor highlighting. */
     var highlightQuery by mutableStateOf(initialSearchQuery.trim())
         private set
@@ -57,6 +71,10 @@ class NoteEditorViewModel(
         private set
 
     private var saveJob: Job? = null
+    private val undoStack = ArrayDeque<List<NoteBlock>>()
+    private val redoStack = ArrayDeque<List<NoteBlock>>()
+    private var coalesceKey: String? = null
+    private var coalesceAt = 0L
 
     init {
         viewModelScope.launch {
@@ -70,10 +88,17 @@ class NoteEditorViewModel(
             }
             blocks = loaded.blocks
             attachments = loaded.attachments
+            noteTitle = loaded.note?.title.orEmpty()
             isPinned = loaded.note?.isPinned ?: false
             folderId = loaded.note?.folderId
             folders = loaded.folders
             isLoading = false
+
+            // New notes may start typing immediately; existing notes stay in reading mode
+            // until the user deliberately taps a block.
+            if (loaded.blocks.isNotEmpty() && loaded.blocks.all { it.plainText().isBlank() }) {
+                focusRequestId = loaded.blocks.first().id
+            }
         }
     }
 
@@ -90,6 +115,7 @@ class NoteEditorViewModel(
     }
 
     fun updateBlock(blockId: String, transform: (NoteBlock) -> NoteBlock) {
+        recordHistory(coalesce = blockId)
         blocks = blocks.map { block ->
             if (block.id == blockId) transform(block) else block
         }
@@ -97,14 +123,17 @@ class NoteEditorViewModel(
     }
 
     fun addBlock(block: NoteBlock) {
+        recordHistory()
         val index = blocks.indexOfFirst { it.id == focusedBlockId }
         val insertAt = if (index >= 0) index + 1 else blocks.size
         blocks = blocks.toMutableList().apply { add(insertAt, block) }
         focusedBlockId = block.id
+        focusRequestId = block.id
         scheduleSave()
     }
 
     fun removeBlock(blockId: String) {
+        recordHistory()
         val target = blocks.firstOrNull { it.id == blockId }
         blocks = blocks.filterNot { it.id == blockId }
         if (focusedBlockId == blockId) focusedBlockId = null
@@ -148,9 +177,11 @@ class NoteEditorViewModel(
                 )
                 val index = blocks.indexOfFirst { it.id == focusedBlockId }
                 val insertAt = if (index >= 0) index + 1 else blocks.size
+                recordHistory()
                 val updated = blocks.toMutableList().apply { add(insertAt, block) }
                 blocks = updated
                 focusedBlockId = block.id
+                focusRequestId = block.id
                 val loaded = withContext(Dispatchers.IO) {
                     repository.saveBlocks(noteId, updated)
                     repository.getAttachments(noteId)
@@ -166,6 +197,7 @@ class NoteEditorViewModel(
 
     /** Keeps the editable block text and the searchable attachment row in lockstep. */
     fun updateAttachmentText(blockId: String, attachmentId: Long, text: String) {
+        recordHistory(coalesce = blockId)
         val edited = blocks.map { block ->
             if (block.id == blockId && block is AttachmentBlock) {
                 block.copy(previewText = text)
@@ -200,6 +232,49 @@ class NoteEditorViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             repository.setPinned(noteId, isPinned)
         }
+    }
+
+    /** Real text/block history: undo restores the last committed snapshot. */
+    fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(blocks)
+        blocks = previous
+        focusedBlockId = null
+        coalesceKey = null
+        refreshHistoryFlags()
+        scheduleSave(immediate = true)
+    }
+
+    fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(blocks)
+        blocks = next
+        focusedBlockId = null
+        coalesceKey = null
+        refreshHistoryFlags()
+        scheduleSave(immediate = true)
+    }
+
+    /**
+     * Snapshots the current blocks before a mutation. Consecutive keystrokes on the same block
+     * collapse into one undo step so Ctrl+Z style recovery feels natural.
+     */
+    private fun recordHistory(coalesce: String? = null) {
+        val now = System.currentTimeMillis()
+        val merge = coalesce != null && coalesce == coalesceKey && now - coalesceAt < HISTORY_COALESCE_MS
+        if (!merge) {
+            undoStack.addLast(blocks)
+            while (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
+            redoStack.clear()
+        }
+        coalesceKey = coalesce
+        coalesceAt = now
+        refreshHistoryFlags()
+    }
+
+    private fun refreshHistoryFlags() {
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
     }
 
     /** Flushes the debounce and only then leaves the screen. No writes on the main thread. */
@@ -241,5 +316,7 @@ class NoteEditorViewModel(
 
     companion object {
         const val SAVE_DEBOUNCE_MS = 300L
+        private const val MAX_HISTORY = 60
+        private const val HISTORY_COALESCE_MS = 900L
     }
 }

@@ -1,13 +1,17 @@
 package com.blackeye.kribo.importexport
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.media.ExifInterface
 import com.blackeye.kribo.data.AttachmentEntity
 import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.NoteRepository
+import com.blackeye.kribo.data.titleText
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.NoteBlock
@@ -21,6 +25,7 @@ import java.io.File
 import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -35,8 +40,8 @@ class ExportService(
         attachments: List<AttachmentEntity> = emptyList(),
     ): String {
         val builder = StringBuilder()
-        val title = note.title.ifBlank { "Nota sin título" }
-        builder.append("# ").append(title).append("\n\n")
+        val title = note.titleText.ifBlank { BlockCodec.derivedTitle(blocks) }
+        if (title.isNotBlank()) builder.append("# ").append(title).append("\n\n")
 
         blocks.forEach { block ->
             when (block) {
@@ -123,10 +128,7 @@ class ExportService(
             textSize = 10.5f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
         }
-        val metaPaint = Paint(bodyPaint).apply {
-            color = Color.rgb(120, 120, 120)
-            textSize = 8.5f
-        }
+        val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
         val pageWidth = 595
         val pageHeight = 842
@@ -166,9 +168,12 @@ class ExportService(
             y += 6f
         }
 
+        val pdfTitle = note.titleText.ifBlank { BlockCodec.derivedTitle(blocks) }
         startPage()
-        canvas?.drawText(note.title.ifBlank { "Nota sin título" }, margin, y + titlePaint.textSize, titlePaint)
-        y += titlePaint.textSize + 12f
+        if (pdfTitle.isNotBlank()) {
+            canvas?.drawText(pdfTitle, margin, y + titlePaint.textSize, titlePaint)
+            y += titlePaint.textSize + 12f
+        }
 
         blocks.forEach { block ->
             when (block) {
@@ -192,19 +197,27 @@ class ExportService(
 
                 is AttachmentBlock -> {
                     val attachment = attachments.firstOrNull { it.id == block.attachmentId }
-                    drawParagraph("Adjunto: ${block.fileName}", metaPaint)
                     val file = attachment?.let { File(it.filePath) }
                     if (file != null && file.isFile && block.mimeType.startsWith("image/")) {
-                        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+                        val bitmap = runCatching { decodeOrientedBitmap(file) }.getOrNull()
                         if (bitmap != null) {
-                            val ratio = contentWidth / bitmap.width.toFloat()
-                            val drawHeight = (bitmap.height * ratio).coerceAtMost(pageHeight * 0.45f)
+                            // Preserve the real aspect ratio: scale to fit width and height,
+                            // never stretch the pixels into a fixed box.
+                            val maxWidth = contentWidth
+                            val maxHeight = pageHeight * 0.55f
+                            val scale = min(
+                                maxWidth / bitmap.width.toFloat(),
+                                maxHeight / bitmap.height.toFloat(),
+                            )
+                            val drawWidth = bitmap.width * scale
+                            val drawHeight = bitmap.height * scale
                             ensureSpace(drawHeight + 10f)
+                            val left = margin + (contentWidth - drawWidth) / 2f
                             canvas?.drawBitmap(
                                 bitmap,
                                 null,
-                                android.graphics.RectF(margin, y, margin + contentWidth, y + drawHeight),
-                                null,
+                                android.graphics.RectF(left, y, left + drawWidth, y + drawHeight),
+                                imagePaint,
                             )
                             y += drawHeight + 10f
                             bitmap.recycle()
@@ -256,6 +269,46 @@ class ExportService(
             }
         }
         notes.size
+    }
+
+    /**
+     * Decodes a full-resolution bitmap and applies the EXIF orientation, so phone photos are
+     * embedded upright and with their true aspect ratio instead of sideways/stretched.
+     */
+    private fun decodeOrientedBitmap(file: File): Bitmap? {
+        val bitmap = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 },
+        ) ?: return null
+        val orientation = runCatching {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+        }
+        if (matrix.isIdentity) return bitmap
+        val oriented = runCatching {
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        }.getOrNull() ?: return bitmap
+        if (oriented !== bitmap) bitmap.recycle()
+        return oriented
     }
 
     private fun wrapText(text: String, paint: Paint, maxWidth: Float): List<String> {

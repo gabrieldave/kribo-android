@@ -1,6 +1,7 @@
 package com.blackeye.kribo.ui.billing
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.blackeye.kribo.R
@@ -81,12 +83,12 @@ internal fun ProPaywallContent(
     onRestore: () -> Unit,
 ) {
     val benefits = listOf(
-        Icons.Rounded.DocumentScanner to R.string.paywall_benefit_ocr,
-        Icons.Rounded.Folder to R.string.paywall_benefit_folders,
-        Icons.Rounded.Palette to R.string.paywall_benefit_themes,
-        Icons.Rounded.PhotoLibrary to R.string.paywall_benefit_photos,
-        Icons.Rounded.Archive to R.string.paywall_benefit_backup,
-        Icons.Rounded.Wifi to R.string.paywall_benefit_wifi,
+        Triple(Icons.Rounded.Cloud, R.string.paywall_benefit_drive, true),
+        Triple(Icons.Rounded.Wifi, R.string.paywall_benefit_wifi, true),
+        Triple(Icons.Rounded.DocumentScanner, R.string.paywall_benefit_ocr, false),
+        Triple(Icons.Rounded.Palette, R.string.paywall_benefit_themes, false),
+        Triple(Icons.Rounded.Folder, R.string.paywall_benefit_folders, false),
+        Triple(Icons.Rounded.PhotoLibrary, R.string.paywall_benefit_photos, false),
     )
     Column(
         modifier = Modifier
@@ -124,26 +126,10 @@ internal fun ProPaywallContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
-        benefits.forEach { (icon, text) ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 34.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = stringResource(text),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+
+        // Drive backup and Wi-Fi transfer lead the list and get the accent treatment.
+        benefits.forEach { (icon, text, highlighted) ->
+            BenefitRow(icon, text, highlighted)
         }
         Spacer(Modifier.height(14.dp))
         Button(
@@ -183,6 +169,51 @@ internal fun ProPaywallContent(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+@Composable
+private fun BenefitRow(
+    icon: ImageVector,
+    textRes: Int,
+    highlighted: Boolean = false,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (highlighted) {
+                    Modifier
+                        .padding(vertical = 3.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                            RoundedCornerShape(10.dp),
+                        )
+                        .padding(horizontal = 8.dp)
+                } else {
+                    Modifier
+                },
+            )
+            .heightIn(min = 34.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = stringResource(textRes),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (highlighted) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            fontWeight = if (highlighted) FontWeight.SemiBold else null,
+        )
     }
 }
 

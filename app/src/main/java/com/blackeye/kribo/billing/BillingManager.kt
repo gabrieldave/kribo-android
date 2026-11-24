@@ -2,6 +2,7 @@ package com.blackeye.kribo.billing
 
 import android.app.Activity
 import android.content.Context
+import android.util.Log
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -150,16 +151,31 @@ class BillingManager(context: Context) : BillingSource {
             )
             .build()
         client.queryProductDetailsAsync(params) { result, productDetailsResult ->
+            Log.d(
+                TAG,
+                "queryProductDetails responseCode=${result.responseCode} " +
+                    "debugMessage=${result.debugMessage} " +
+                    "productDetailsList.size=${productDetailsResult.productDetailsList.size}",
+            )
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                 val product = productDetailsResult.productDetailsList
                     .firstOrNull { it.productId == PRO_PRODUCT_ID }
                 proProduct = product
-                _state.update {
-                    it.copy(formattedPrice = product?.oneTimePurchaseOfferDetails?.formattedPrice)
-                }
+                _state.update { it.copy(formattedPrice = localizedPrice(product)) }
             }
         }
     }
+
+    /**
+     * Billing 8.x exposes one-time prices as a list of offers. Prefer the list (multi-offer
+     * products) and only fall back to the legacy single offer value.
+     */
+    @Suppress("DEPRECATION")
+    private fun localizedPrice(product: ProductDetails?): String? =
+        product?.oneTimePurchaseOfferDetailsList
+            ?.firstOrNull { !it.formattedPrice.isNullOrBlank() }
+            ?.formattedPrice
+            ?: product?.oneTimePurchaseOfferDetails?.formattedPrice
 
     private fun queryPurchases(onResult: ((Boolean) -> Unit)? = null) {
         val client = billingClient ?: return
@@ -168,6 +184,11 @@ class BillingManager(context: Context) : BillingSource {
             .setProductType(BillingClient.ProductType.INAPP)
             .build()
         client.queryPurchasesAsync(params) { result, purchases ->
+            Log.d(
+                TAG,
+                "queryPurchases responseCode=${result.responseCode} " +
+                    "debugMessage=${result.debugMessage} purchases.size=${purchases.size}",
+            )
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                 val owned = purchases.any {
                     it.purchaseState == Purchase.PurchaseState.PURCHASED &&
@@ -198,6 +219,11 @@ class BillingManager(context: Context) : BillingSource {
             .setPurchaseToken(purchase.purchaseToken)
             .build()
         client.acknowledgePurchase(params) { result ->
+            Log.d(
+                TAG,
+                "acknowledgePurchase responseCode=${result.responseCode} " +
+                    "debugMessage=${result.debugMessage}",
+            )
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                 _state.update { it.copy(owned = true) }
             }
@@ -206,5 +232,6 @@ class BillingManager(context: Context) : BillingSource {
 
     companion object {
         const val PRO_PRODUCT_ID = "kribo_pro_lifetime"
+        private const val TAG = "KriboBilling"
     }
 }

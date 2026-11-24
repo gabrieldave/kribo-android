@@ -105,7 +105,39 @@ class WifiTransferServerTest {
         assertFalse(server.state.value.running)
     }
 
-    private data class Response(val status: Int, val body: ByteArray) {
+    @Test
+    fun pinQueryRedirectsToCleanUrlWithHttpOnlySessionCookie() = runBlocking {
+        assertTrue(server.start(0))
+        val port = server.state.value.port
+        val pin = server.state.value.pin
+        assertTrue(port > 0)
+
+        val login = request(port, "GET", "/?pin=$pin")
+        assertEquals(302, login.status)
+        assertTrue(login.headerText.contains("Location: /"))
+        assertTrue(login.headerText.contains("Set-Cookie: kribo_session="))
+        assertTrue(login.headerText.contains("HttpOnly"))
+        assertTrue(login.headerText.contains("SameSite=Strict"))
+        val cookie = Regex("Set-Cookie: ([^;\\r\\n]+)")
+            .find(login.headerText)!!
+            .groupValues[1]
+
+        val app = request(port, "GET", "/", cookie = cookie)
+        assertEquals(200, app.status)
+        assertTrue(app.bodyText.contains("Conectado en red local"))
+        assertTrue(app.bodyText.contains("Buscar notas y OCR"))
+
+        val wrongPin = if (pin == "000000") "111111" else "000000"
+        val rejected = request(port, "GET", "/?pin=$wrongPin")
+        assertEquals(302, rejected.status)
+        assertTrue(rejected.headerText.contains("Location: /?error=1"))
+    }
+
+    private data class Response(
+        val status: Int,
+        val body: ByteArray,
+        val headerText: String,
+    ) {
         val bodyText: String get() = body.toString(Charsets.UTF_8)
     }
 
@@ -114,6 +146,7 @@ class WifiTransferServerTest {
         method: String,
         path: String,
         pin: String? = null,
+        cookie: String? = null,
         body: String = "",
         contentType: String = "text/plain; charset=utf-8",
     ): Response {
@@ -126,6 +159,7 @@ class WifiTransferServerTest {
                 append("Host: 127.0.0.1:$port\r\n")
                 append("Connection: close\r\n")
                 if (pin != null) append("X-Kribo-Pin: $pin\r\n")
+                if (cookie != null) append("Cookie: $cookie\r\n")
                 if (bytes.isNotEmpty()) {
                     append("Content-Type: $contentType\r\n")
                     append("Content-Length: ${bytes.size}\r\n")
@@ -148,7 +182,11 @@ class WifiTransferServerTest {
             val headerText = String(all, 0, separator.first, Charsets.UTF_8)
             val status = headerText.lineSequence().first()
                 .split(' ').getOrNull(1)?.toIntOrNull() ?: 0
-            return Response(status, all.copyOfRange(separator.second, all.size))
+            return Response(
+                status = status,
+                body = all.copyOfRange(separator.second, all.size),
+                headerText = headerText,
+            )
         }
     }
 

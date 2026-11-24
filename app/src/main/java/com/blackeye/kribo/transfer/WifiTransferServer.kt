@@ -21,6 +21,7 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.security.SecureRandom
 import java.util.Locale
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
@@ -61,6 +62,7 @@ class WifiTransferServer(
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
     private var sessionPin: String = ""
+    private var sessionToken: String = ""
 
     private val _state = kotlinx.coroutines.flow.MutableStateFlow(State())
     val state: kotlinx.coroutines.flow.StateFlow<State> = _state
@@ -74,6 +76,7 @@ class WifiTransferServer(
             socket.bind(InetSocketAddress(port))
             serverSocket = socket
             sessionPin = "%06d".format(Locale.US, Random.nextInt(1_000_000))
+            sessionToken = newSessionToken()
             val (ip, wifi) = networkInfo()
             _state.value = State(
                 running = true,
@@ -99,6 +102,7 @@ class WifiTransferServer(
         runCatching { serverSocket?.close() }
         serverSocket = null
         sessionPin = ""
+        sessionToken = ""
         _state.value = State()
     }
 
@@ -150,12 +154,14 @@ class WifiTransferServer(
 
                 val path = rawPath.substringBefore('?')
                 val query = parseQuery(rawPath.substringAfter('?', ""))
-                val pin = headers["x-kribo-pin"]
-                    ?: headers["cookie"]?.split(';')
-                        ?.map { it.trim() }
-                        ?.firstOrNull { it.startsWith("kribo_pin=") }
+                val cookieValues = headers["cookie"]?.split(';')?.map { it.trim() }.orEmpty()
+                val cookieCredential = cookieValues
+                    .firstOrNull { it.startsWith("kribo_session=") }
+                    ?.substringAfter('=')
+                    ?: cookieValues
+                        .firstOrNull { it.startsWith("kribo_pin=") }
                         ?.substringAfter('=')
-                    ?: query["pin"]
+                val credential = headers["x-kribo-pin"] ?: cookieCredential ?: query["pin"]
                 val output = socket.getOutputStream()
 
                 if (method == "OPTIONS") {
@@ -165,21 +171,18 @@ class WifiTransferServer(
 
                 when {
                     method == "GET" && path == "/" -> {
-                        if (pin == sessionPin) {
-                            respond(
-                                output,
-                                "200 OK",
-                                "text/html; charset=utf-8",
-                                APP_HTML.toByteArray(Charsets.UTF_8),
-                                mapOf("Set-Cookie" to "kribo_pin=$sessionPin; Path=/; HttpOnly; SameSite=Strict"),
-                            )
-                        } else {
-                            respond(
-                                output,
-                                "200 OK",
-                                "text/html; charset=utf-8",
-                                LOGIN_HTML.toByteArray(Charsets.UTF_8),
-                            )
+                        val queryPin = query["pin"]
+                        when {
+                            queryPin != null && queryPin == sessionPin ->
+                                redirect(output, "/", sessionCookie())
+
+                            queryPin != null && !isAuthenticated(credential) ->
+                                redirect(output, "/?error=1")
+
+                            isAuthenticated(credential) ->
+                                respondHtml(output, APP_HTML)
+
+                            else -> respondHtml(output, LOGIN_HTML)
                         }
                     }
 
@@ -190,14 +193,14 @@ class WifiTransferServer(
                                 "204 No Content",
                                 "text/plain",
                                 ByteArray(0),
-                                mapOf("Set-Cookie" to "kribo_pin=$sessionPin; Path=/; HttpOnly; SameSite=Strict"),
+                                mapOf("Set-Cookie" to sessionCookie()),
                             )
                         } else {
                             unauthorized(output)
                         }
                     }
 
-                    !isAuthenticated(pin) -> unauthorized(output)
+                    !isAuthenticated(credential) -> unauthorized(output)
 
                     method == "GET" && path == "/api/notes" -> {
                         val queryText = query["q"].orEmpty().trim()
@@ -207,6 +210,36 @@ class WifiTransferServer(
                             .map(::noteDto)
                             .toList()
                         respondJson(output, json.encodeToString(notes))
+                    }
+
+                    method == "GET" && NOTE_DETAIL.matches(path) -> {
+                        val id = NOTE_DETAIL.matchEntire(path)!!.groupValues[1].toLong()
+                        val note = repository.getNote(id)
+                        if (note == null) {
+                            respond(output, "404 Not Found", "text/plain", "Not found".toByteArray())
+                        } else {
+                            val blocks = BlockCodec.decode(note.blocksJson)
+                            val attachments = repository.getAttachments(id).map { attachment ->
+                                AttachmentDto(
+                                    id = attachment.id,
+                                    fileName = File(attachment.filePath).name,
+                                    mimeType = attachment.mimeType,
+                                    url = "/api/attachments/${attachment.id}",
+                                )
+                            }
+                            val detail = NoteDetailDto(
+                                id = note.id,
+                                title = note.displayTitle(),
+                                body = note.bodyWithoutTitle(),
+                                ocrText = note.ocrTextIndex,
+                                updatedAt = note.updatedAt,
+                                editable = blocks.all {
+                                    it is TitleBlock || it is ParagraphBlock
+                                },
+                                attachments = attachments,
+                            )
+                            respondJson(output, json.encodeToString(detail))
+                        }
                     }
 
                     method == "GET" && path == "/api/folders" -> {
@@ -302,6 +335,59 @@ class WifiTransferServer(
                         }
                     }
 
+                    method == "PUT" && NOTE_DETAIL.matches(path) -> {
+                        val id = NOTE_DETAIL.matchEntire(path)!!.groupValues[1].toLong()
+                        val request = runCatching {
+                            json.decodeFromString<UpdateNoteRequest>(body.toString(Charsets.UTF_8))
+                        }.getOrNull()
+                        val note = repository.getNote(id)
+                        when {
+                            request == null -> respond(
+                                output,
+                                "400 Bad Request",
+                                "text/plain",
+                                "Invalid JSON".toByteArray(),
+                            )
+
+                            note == null -> respond(
+                                output,
+                                "404 Not Found",
+                                "text/plain",
+                                "Not found".toByteArray(),
+                            )
+
+                            else -> {
+                                val existing = repository.getBlocks(id)
+                                if (!existing.all { it is TitleBlock || it is ParagraphBlock }) {
+                                    respond(
+                                        output,
+                                        "409 Conflict",
+                                        "application/json; charset=utf-8",
+                                        "{\"error\":\"rich_note\"}".toByteArray(Charsets.UTF_8),
+                                    )
+                                } else {
+                                    val title = request.title.trim().take(120)
+                                    val text = request.text.trim()
+                                    val blocks = buildList {
+                                        if (title.isNotBlank()) add(TitleBlock(text = title))
+                                        if (text.isNotBlank()) add(ParagraphBlock(text = text))
+                                    }
+                                    if (blocks.isEmpty()) {
+                                        respond(
+                                            output,
+                                            "400 Bad Request",
+                                            "text/plain",
+                                            "Empty note".toByteArray(),
+                                        )
+                                    } else {
+                                        repository.saveBlocks(id, blocks)
+                                        respondJson(output, "{\"id\":$id}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     else -> respond(output, "404 Not Found", "text/plain", "Not found".toByteArray())
                 }
             }.onFailure {
@@ -310,19 +396,57 @@ class WifiTransferServer(
         }
     }
 
-    private fun isAuthenticated(pin: String?): Boolean =
-        sessionPin.isNotBlank() && pin == sessionPin
+    private fun isAuthenticated(credential: String?): Boolean =
+        sessionPin.isNotBlank() &&
+            (credential == sessionPin ||
+                (sessionToken.isNotBlank() && credential == sessionToken))
 
-    private fun noteDto(note: NoteEntity): NoteDto {
-        val text = note.ocrTextIndex.ifBlank { note.plainTextIndex }
-        return NoteDto(
-            id = note.id,
-            title = note.title.ifBlank { text.lineSequence().firstOrNull().orEmpty().take(80) },
-            folderId = note.folderId,
-            updatedAt = note.updatedAt,
-            preview = text.replace('\n', ' ').take(240),
-            hasOcr = note.ocrTextIndex.isNotBlank(),
-        )
+    private fun noteDto(note: NoteEntity): NoteDto = NoteDto(
+        id = note.id,
+        title = note.displayTitle(),
+        folderId = note.folderId,
+        updatedAt = note.updatedAt,
+        preview = note.previewText(),
+        hasOcr = note.ocrTextIndex.isNotBlank(),
+    )
+
+    private fun NoteEntity.displayTitle(): String =
+        title.ifBlank {
+            plainTextIndex.lineSequence()
+                .firstOrNull { it.isNotBlank() }
+                ?.trim()
+                .orEmpty()
+                .ifBlank {
+                    ocrTextIndex.lineSequence()
+                        .firstOrNull { it.isNotBlank() }
+                        ?.trim()
+                        .orEmpty()
+                }
+                .take(80)
+        }
+
+    /** Body without repeating the headline that the UI already shows on its own. */
+    private fun NoteEntity.bodyWithoutTitle(): String {
+        val cleanTitle = displayTitle().trim()
+        val lines = plainTextIndex.lineSequence().toList()
+        val start = if (cleanTitle.isNotBlank() && lines.firstOrNull()?.trim() == cleanTitle) 1 else 0
+        return lines.drop(start).joinToString("\n").trim()
+    }
+
+    /** Card preview based on real body copy, never the title twice. */
+    private fun NoteEntity.previewText(): String {
+        val cleanTitle = displayTitle().trim()
+        val candidates = listOf(bodyWithoutTitle(), ocrTextIndex)
+        for (candidate in candidates) {
+            var text = candidate.trim()
+            if (text.isBlank()) continue
+            if (cleanTitle.isNotBlank() && text.startsWith(cleanTitle, ignoreCase = true)) {
+                text = text.substring(cleanTitle.length)
+                    .trimStart(' ', '\n', ':', '-', '–', '—')
+            }
+            if (text.isNotBlank()) return text.replace('\n', ' ').take(240)
+        }
+        return ""
     }
 
     private fun NoteEntity.matches(query: String): Boolean {
@@ -360,6 +484,33 @@ class WifiTransferServer(
 
     private fun respondJson(output: OutputStream, body: String) {
         respond(output, "200 OK", "application/json; charset=utf-8", body.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun respondHtml(output: OutputStream, html: String) {
+        respond(
+            output,
+            "200 OK",
+            "text/html; charset=utf-8",
+            html.toByteArray(Charsets.UTF_8),
+            HTML_HEADERS,
+        )
+    }
+
+    private fun redirect(output: OutputStream, location: String, cookie: String? = null) {
+        val headers = mutableMapOf("Location" to location)
+        if (cookie != null) headers["Set-Cookie"] = cookie
+        respond(output, "302 Found", "text/plain", ByteArray(0), headers)
+    }
+
+    private fun sessionCookie(): String =
+        "kribo_session=$sessionToken; Path=/; HttpOnly; SameSite=Strict"
+
+    private fun newSessionToken(): String {
+        val bytes = ByteArray(24)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") {
+            "%02x".format(Locale.US, it.toInt() and 0xFF)
+        }
     }
 
     private fun unauthorized(output: OutputStream) {
@@ -437,66 +588,47 @@ class WifiTransferServer(
         val folderId: Long? = null,
     )
 
+    @Serializable
+    data class UpdateNoteRequest(
+        val title: String = "",
+        val text: String = "",
+    )
+
+    @Serializable
+    data class AttachmentDto(
+        val id: Long,
+        val fileName: String,
+        val mimeType: String,
+        val url: String,
+    )
+
+    @Serializable
+    data class NoteDetailDto(
+        val id: Long,
+        val title: String,
+        val body: String,
+        val ocrText: String,
+        val updatedAt: Long,
+        val editable: Boolean,
+        val attachments: List<AttachmentDto>,
+    )
+
     companion object {
         const val DEFAULT_PORT = 8765
+        private val NOTE_DETAIL = Regex("^/api/notes/(\\d+)$")
         private val NOTE_EXPORT = Regex("^/api/notes/(\\d+)/export$")
         private val ATTACHMENT = Regex("^/api/attachments/(\\d+)$")
 
-        private val LOGIN_HTML = """
-            <!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1">
-            <title>Kribo · PIN</title>
-            <style>
-            body{font-family:system-ui,-apple-system,sans-serif;background:#0D1117;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0}
-            .card{background:#161B22;border:1px solid #30363D;border-radius:20px;padding:28px;max-width:340px;width:90%}
-            h1{margin:0 0 8px;color:#00D8FF;font-size:24px}p{color:#9BA7B4;font-size:14px}
-            input{width:100%;box-sizing:border-box;margin:16px 0;padding:14px;border-radius:12px;border:1px solid #30363D;background:#0D1117;color:#fff;font-size:24px;letter-spacing:8px;text-align:center}
-            button{width:100%;padding:14px;border-radius:12px;border:0;background:#00D8FF;color:#00232B;font-weight:700;font-size:16px}
-            </style>
-            <div class="card"><h1>Kribo</h1><p>Introduce el PIN de 6 dígitos que aparece en el Pixel.</p>
-            <input id="pin" inputmode="numeric" maxlength="6" autofocus>
-            <button id="go">Entrar</button></div>
-            <script>
-            const p=new URLSearchParams(location.search).get('pin');
-            if(p&&p.length===6){location.href='/?pin='+encodeURIComponent(p)}
-            document.getElementById('go').onclick=()=>{const v=document.getElementById('pin').value.trim();if(v.length===6)location.href='/?pin='+encodeURIComponent(v)}
-            </script></html>
-        """.trimIndent()
+        private val HTML_HEADERS = mapOf(
+            "Content-Security-Policy" to
+                "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; " +
+                "script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; " +
+                "form-action 'self'",
+            "X-Content-Type-Options" to "nosniff",
+            "Referrer-Policy" to "no-referrer",
+        )
 
-        private val APP_HTML = """
-            <!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1">
-            <title>Kribo · Transferencia local</title>
-            <style>
-            :root{color-scheme:dark}*{box-sizing:border-box}
-            body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#0D1117;color:#fff}
-            header{padding:20px;border-bottom:1px solid #30363D;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-            h1{margin:0;color:#00D8FF;font-size:22px}.muted{color:#9BA7B4;font-size:13px}
-            main{max-width:860px;margin:0 auto;padding:20px}
-            input,textarea{width:100%;padding:12px;border-radius:12px;border:1px solid #30363D;background:#161B22;color:#fff;font:inherit;margin:6px 0}
-            button{padding:12px 16px;border-radius:12px;border:0;background:#00D8FF;color:#00232B;font-weight:700;cursor:pointer}
-            button.ghost{background:#161B22;color:#00D8FF;border:1px solid #30363D}
-            .card{background:#161B22;border:1px solid #30363D;border-radius:16px;padding:14px;margin:10px 0}
-            .row{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap}
-            a{color:#00D8FF;text-decoration:none}.preview{color:#9BA7B4;font-size:13px;margin-top:6px}
-            .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:600px){.grid{grid-template-columns:1fr}}
-            </style>
-            <header><div><h1>Kribo</h1><div class="muted">Transferencia local · solo en tu Wi-Fi</div></div>
-            <button class="ghost" onclick="backup()">Descargar backup .zip</button></header>
-            <main>
-            <input id="q" placeholder="Buscar notas y OCR…" oninput="load()">
-            <div id="notes"></div>
-            <div class="card"><h2 style="margin:0 0 8px">Nueva nota</h2>
-            <input id="title" placeholder="Título"><textarea id="text" rows="4" placeholder="Texto"></textarea>
-            <button onclick="createNote()">Guardar en Kribo</button><span id="msg" class="muted"></span></div>
-            </main>
-            <script>
-            const pin=new URLSearchParams(location.search).get('pin')||(document.cookie.match(/kribo_pin=([^;]+)/)||[])[1]||'';
-            const h=pin?{'X-Kribo-Pin':pin}:{};
-            const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-            async function load(){const q=document.getElementById('q').value;const r=await fetch('/api/notes?q='+encodeURIComponent(q),{headers:h});if(!r.ok){document.getElementById('notes').innerHTML='<p class="muted">PIN incorrecto o sesión cerrada.</p>';return}
-            const list=await r.json();document.getElementById('notes').innerHTML=list.map(n=>`<div class="card"><div class="row"><strong>${'$'}{esc(n.title)}</strong><a href="/api/notes/${'$'}{n.id}/export" download>Descargar .md</a></div><div class="preview">${'$'}{esc(n.preview)}</div></div>`).join('')||'<p class="muted">Sin notas.</p>'}
-            async function createNote(){const title=document.getElementById('title').value;const text=document.getElementById('text').value;const r=await fetch('/api/notes',{method:'POST',headers:{...h,'Content-Type':'application/json'},body:JSON.stringify({title,text})});const m=document.getElementById('msg');if(r.ok){m.textContent='Guardada';document.getElementById('title').value='';document.getElementById('text').value='';load()}else{m.textContent='No se pudo guardar'}}
-            function backup(){location.href='/api/backup.zip'}load();
-            </script></html>
-        """.trimIndent()
+        private val LOGIN_HTML = WifiTransferPages.LOGIN
+        private val APP_HTML = WifiTransferPages.APP
     }
 }

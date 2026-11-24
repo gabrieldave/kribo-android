@@ -1,6 +1,7 @@
 package com.blackeye.kribo.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -48,6 +49,7 @@ fun AppScreen(
     actions: @Composable RowScope.() -> Unit = {},
     footer: (@Composable ColumnScope.() -> Unit)? = null,
     scrollable: Boolean = true,
+    showHeader: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
@@ -61,7 +63,13 @@ fun AppScreen(
                 .navigationBarsPadding()
                 .imePadding(),
         ) {
-            ScreenHeader(title = title, onBack = onBack, actions = actions)
+            // Keep a stable slot so collapsing the header never recreates the body (and never
+            // steals focus from the Home search field).
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (showHeader) {
+                    ScreenHeader(title = title, onBack = onBack, actions = actions)
+                }
+            }
 
             val bodyModifier = Modifier
                 .fillMaxWidth()

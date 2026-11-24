@@ -57,6 +57,23 @@ class UiPreferences(context: Context) {
     )
     val homeLayout: StateFlow<HomeLayout> = _homeLayout.asStateFlow()
 
+    private val _onboardingSeen = MutableStateFlow(
+        preferences.getBoolean(KEY_ONBOARDING_SEEN, false),
+    )
+    val onboardingSeen: StateFlow<Boolean> = _onboardingSeen.asStateFlow()
+
+    fun markOnboardingSeen() {
+        if (_onboardingSeen.value) return
+        preferences.edit().putBoolean(KEY_ONBOARDING_SEEN, true).apply()
+        _onboardingSeen.value = true
+    }
+
+    fun isWelcomeNoteSeeded(): Boolean = preferences.getBoolean(KEY_WELCOME_NOTE_SEEDED, false)
+
+    fun markWelcomeNoteSeeded() {
+        preferences.edit().putBoolean(KEY_WELCOME_NOTE_SEEDED, true).apply()
+    }
+
     fun setTheme(theme: AppTheme) {
         if (_theme.value == theme) return
         preferences.edit().putString(KEY_THEME, theme.id).apply()
@@ -73,5 +90,7 @@ class UiPreferences(context: Context) {
         private const val PREFS_NAME = "kribo_ui"
         private const val KEY_THEME = "theme_v1"
         private const val KEY_HOME_LAYOUT = "home_layout_v1"
+        private const val KEY_ONBOARDING_SEEN = "onboarding_seen_v1"
+        private const val KEY_WELCOME_NOTE_SEEDED = "welcome_note_seeded_v1"
     }
 }

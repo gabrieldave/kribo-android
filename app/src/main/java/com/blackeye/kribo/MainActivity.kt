@@ -7,10 +7,17 @@ import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ui.KriboApp
+import com.blackeye.kribo.ui.components.KriboSplashPulse
 import com.blackeye.kribo.ui.security.UnauthorizedScreen
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.theme.KriboTheme
@@ -30,23 +37,31 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val theme by container.uiPreferences.theme.collectAsStateWithLifecycle()
             KriboTheme(theme = theme) {
-                if (!authorized) {
-                    UnauthorizedScreen()
-                } else {
-                    val isPro by container.entitlementRepository.isPro.collectAsStateWithLifecycle()
-                    val resolved by container.entitlementRepository.resolved.collectAsStateWithLifecycle()
-                    LaunchedEffect(theme, isPro, resolved) {
-                        if (resolved && !isPro && theme in ProLimits.PRO_THEMES) {
-                            container.uiPreferences.setTheme(AppTheme.OBSIDIAN)
+                var showSplashPulse by remember { mutableStateOf(true) }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!authorized) {
+                        UnauthorizedScreen()
+                    } else {
+                        val isPro by container.entitlementRepository.isPro.collectAsStateWithLifecycle()
+                        val resolved by container.entitlementRepository.resolved.collectAsStateWithLifecycle()
+                        LaunchedEffect(theme, isPro, resolved) {
+                            if (resolved && !isPro && theme in ProLimits.PRO_THEMES) {
+                                container.uiPreferences.setTheme(AppTheme.OBSIDIAN)
+                            }
                         }
+                        val billingState by container.billingManager.state.collectAsStateWithLifecycle()
+                        KriboApp(
+                            container = container,
+                            billingState = billingState,
+                            isPro = isPro,
+                            onPurchase = {
+                                container.entitlementRepository.launchPurchase(this@MainActivity)
+                            },
+                        )
                     }
-                    val billingState by container.billingManager.state.collectAsStateWithLifecycle()
-                    KriboApp(
-                        container = container,
-                        billingState = billingState,
-                        isPro = isPro,
-                        onPurchase = { container.entitlementRepository.launchPurchase(this) },
-                    )
+                    if (showSplashPulse) {
+                        KriboSplashPulse(onFinished = { showSplashPulse = false })
+                    }
                 }
             }
         }

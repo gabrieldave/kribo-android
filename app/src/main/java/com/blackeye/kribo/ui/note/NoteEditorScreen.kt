@@ -11,6 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,10 +46,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Subject
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -58,7 +65,10 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardHide
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
@@ -69,12 +79,18 @@ import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -91,15 +107,20 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -108,6 +129,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
@@ -138,9 +160,14 @@ import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.StatusPill
+import com.blackeye.kribo.ui.components.TooltipAction
+import com.blackeye.kribo.ui.components.TooltipIconButton
+import com.blackeye.kribo.ui.components.hideKeyboardOnScroll
+import com.blackeye.kribo.ui.components.isImeVisible
 import java.io.File
 import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -153,6 +180,7 @@ fun NoteEditorScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
     val viewModel: NoteEditorViewModel = viewModel(
         key = "note-editor-$noteId",
         factory = viewModelFactory {
@@ -187,7 +215,12 @@ fun NoteEditorScreen(
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showFolderPicker by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
     var paywallReason by remember { mutableStateOf<PaywallReason?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val haptic = LocalHapticFeedback.current
+    val deletedMessage = stringResource(R.string.note_deleted_snackbar)
+    val undoLabel = stringResource(R.string.action_undo)
     val manualPhotoCount = blocks.count { it is AttachmentBlock && it.manual }
     val requestImage: (Uri) -> Unit = { uri ->
         if (ProLimits.canAttachManualPhoto(manualPhotoCount, isPro)) {
@@ -236,16 +269,45 @@ fun NoteEditorScreen(
     val exit: () -> Unit = { viewModel.flushAndExit(onBack) }
     BackHandler(onBack = exit)
 
+    val deleteWithUndo: () -> Unit = {
+        showDeleteConfirm = false
+        scope.launch {
+            val timeout = launch {
+                delay(DELETE_UNDO_WINDOW_MS)
+                snackbarHostState.currentSnackbarData?.dismiss()
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = deletedMessage,
+                actionLabel = undoLabel,
+                duration = SnackbarDuration.Indefinite,
+            )
+            timeout.cancel()
+            if (result != SnackbarResult.ActionPerformed) {
+                viewModel.deleteNote(onBack)
+            }
+        }
+    }
+
+    // New blocks take the keyboard, get a soft haptic tick and stay above the IME.
+    LaunchedEffect(viewModel.focusRequestId) {
+        val requestId = viewModel.focusRequestId ?: return@LaunchedEffect
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val index = blocks.indexOfFirst { it.id == requestId }
+        if (index >= 0) listState.animateScrollToItem(index)
+    }
+
     fun exportAndShare(pdf: Boolean) {
         showExport = false
         scope.launch {
             val file = runCatching {
                 withContext(Dispatchers.IO) {
                     val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+                    // The note title (sanitized) names the exported file, not an internal id.
+                    val baseName = sanitizedExportName(titleBlock ?: viewModel.noteTitle, noteId)
                     if (pdf) {
-                        container.exportService.exportNotePdf(noteId, File(dir, "kribo-$noteId.pdf"))
+                        container.exportService.exportNotePdf(noteId, File(dir, "$baseName.pdf"))
                     } else {
-                        container.exportService.exportNoteMarkdown(noteId, File(dir, "kribo-$noteId.md"))
+                        container.exportService.exportNoteMarkdown(noteId, File(dir, "$baseName.md"))
                     }
                 }
             }.getOrNull()
@@ -273,7 +335,8 @@ fun NoteEditorScreen(
     }
     LaunchedEffect(scrollTarget, viewModel.isLoading) {
         if (!viewModel.isLoading && scrollTarget >= 0) {
-            listState.animateScrollToItem(scrollTarget)
+            // The folder chip is the first list item, so block indices shift by one.
+            listState.animateScrollToItem(scrollTarget + 1)
         }
     }
 
@@ -283,39 +346,115 @@ fun NoteEditorScreen(
         scrollable = false,
         actions = {
             IconButton(
-                onClick = viewModel::togglePinned,
-                modifier = Modifier.size(48.dp),
+                onClick = exit,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("editor-home"),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.PushPin,
-                    contentDescription = stringResource(R.string.cd_pin),
-                    tint = if (viewModel.isPinned) {
-                        MaterialTheme.colorScheme.primary
+                    imageVector = Icons.Rounded.Home,
+                    contentDescription = stringResource(R.string.cd_home),
+                )
+            }
+            IconButton(
+                onClick = viewModel::undo,
+                enabled = viewModel.canUndo,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("editor-undo"),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.Undo,
+                    contentDescription = stringResource(R.string.cd_undo),
+                    tint = if (viewModel.canUndo) {
+                        MaterialTheme.colorScheme.onSurface
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
                     },
                 )
             }
             IconButton(
-                onClick = { showExport = true },
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Share,
-                    contentDescription = stringResource(R.string.cd_export),
-                )
-            }
-            IconButton(
-                onClick = { showDeleteConfirm = true },
+                onClick = viewModel::redo,
+                enabled = viewModel.canRedo,
                 modifier = Modifier
                     .size(48.dp)
-                    .testTag("editor-delete-note"),
+                    .testTag("editor-redo"),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = stringResource(R.string.cd_delete_note),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    imageVector = Icons.AutoMirrored.Rounded.Redo,
+                    contentDescription = stringResource(R.string.cd_redo),
+                    tint = if (viewModel.canRedo) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                    },
                 )
+            }
+            Box {
+                IconButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("editor-more"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = stringResource(R.string.cd_more),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (viewModel.isPinned) R.string.cd_unpin else R.string.cd_pin,
+                                ),
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.PushPin,
+                                contentDescription = null,
+                                tint = if (viewModel.isPinned) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            viewModel.togglePinned()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.export_title)) },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Share, contentDescription = null)
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            showExport = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_delete)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            showDeleteConfirm = true
+                        },
+                    )
+                }
             }
         },
         footer = {
@@ -345,11 +484,6 @@ fun NoteEditorScreen(
                 )
             }
         } else {
-            FolderChipButton(
-                label = folderLabel,
-                onClick = { showFolderPicker = true },
-            )
-            Spacer(Modifier.height(6.dp))
             if (viewModel.highlightQuery.isNotBlank()) {
                 SearchHighlightChip(
                     query = viewModel.highlightQuery,
@@ -359,13 +493,27 @@ fun NoteEditorScreen(
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .hideKeyboardOnScroll(),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp),
             ) {
+                item(key = "editor-folder-chip") {
+                    Column {
+                        FolderChipButton(
+                            label = folderLabel,
+                            onClick = { showFolderPicker = true },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
                 items(items = blocks, key = { it.id }) { block ->
                     BlockRow(
                         block = block,
                         focused = viewModel.focusedBlockId == block.id,
+                        focusRequest = viewModel.focusRequestId == block.id,
+                        flash = viewModel.focusRequestId == block.id,
                         attachment = (block as? AttachmentBlock)?.attachmentId?.let(attachmentMap::get),
                         highlightQuery = viewModel.highlightQuery,
                         highlightStyle = highlight,
@@ -375,6 +523,7 @@ fun NoteEditorScreen(
                         },
                         onDelete = { viewModel.removeBlock(block.id) },
                         onOpenImage = { path, label ->
+                            keyboardController?.hide()
                             viewerPath = path
                             viewerLabel = label
                         },
@@ -384,11 +533,19 @@ fun NoteEditorScreen(
                                 viewModel.updateAttachmentText(attachmentBlock.id, attachmentId, text)
                             }
                         },
+                        onEnterNextTask = { viewModel.addBlock(TaskBlock()) },
+                        onSaveAndHome = if (block is AttachmentBlock && block.pageNumber > 0) {
+                            exit
+                        } else {
+                            null
+                        },
                     )
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
         }
+
+        SnackbarHost(hostState = snackbarHostState)
     }
 
     if (showAttachChooser) {
@@ -450,10 +607,7 @@ fun NoteEditorScreen(
             title = stringResource(R.string.home_delete_title),
             dismissLabel = stringResource(R.string.action_cancel),
             confirmLabel = stringResource(R.string.action_delete),
-            onConfirm = {
-                showDeleteConfirm = false
-                viewModel.deleteNote(onBack)
-            },
+            onConfirm = deleteWithUndo,
         ) {
             Text(
                 text = stringResource(R.string.home_delete_message),
@@ -668,53 +822,78 @@ internal fun EditorToolbar(
     activeBlock: NoteBlock?,
 ) {
     val activeTitleLevel = (activeBlock as? TitleBlock)?.level
+    val keyboard = LocalSoftwareKeyboardController.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .testTag("editor-toolbar"),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolbarTextButton(
-            label = stringResource(R.string.editor_h1),
-            descriptionRes = R.string.cd_block_title,
-            active = activeTitleLevel == 1,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.testTag("toolbar-h1"),
-        ) { onAdd(TitleBlock(level = 1)) }
-        ToolbarTextButton(
-            label = stringResource(R.string.editor_h2),
-            descriptionRes = R.string.cd_block_subtitle,
-            active = activeTitleLevel == 2,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.testTag("toolbar-h2"),
-        ) { onAdd(TitleBlock(level = 2)) }
-        ToolbarButton(
-            Icons.AutoMirrored.Rounded.Subject,
-            R.string.cd_block_paragraph,
-            active = activeBlock is ParagraphBlock,
-        ) { onAdd(ParagraphBlock()) }
-        ToolbarButton(
-            Icons.Rounded.CheckBox,
-            R.string.cd_block_task,
-            active = activeBlock is TaskBlock,
-        ) { onAdd(TaskBlock()) }
-        ToolbarButton(
-            Icons.Rounded.UnfoldMore,
-            R.string.cd_block_toggle,
-            active = activeBlock is ToggleBlock,
-        ) { onAdd(ToggleBlock()) }
-        ToolbarButton(
-            Icons.Rounded.FormatQuote,
-            R.string.cd_block_quote,
-            active = activeBlock is QuoteBlock,
-        ) { onAdd(QuoteBlock()) }
-        ToolbarButton(
-            Icons.Rounded.AddPhotoAlternate,
-            R.string.cd_attach_image,
-            active = activeBlock is AttachmentBlock,
-        ) { onAttachImage() }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolbarTextButton(
+                label = stringResource(R.string.editor_h1),
+                descriptionRes = R.string.cd_block_title,
+                tooltip = stringResource(R.string.block_tooltip_h1),
+                active = activeTitleLevel == 1,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.testTag("toolbar-h1"),
+            ) { onAdd(TitleBlock(level = 1)) }
+            ToolbarTextButton(
+                label = stringResource(R.string.editor_h2),
+                descriptionRes = R.string.cd_block_subtitle,
+                tooltip = stringResource(R.string.block_tooltip_h2),
+                active = activeTitleLevel == 2,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.testTag("toolbar-h2"),
+            ) { onAdd(TitleBlock(level = 2)) }
+            ToolbarButton(
+                Icons.AutoMirrored.Rounded.Subject,
+                R.string.cd_block_paragraph,
+                tooltipRes = R.string.block_tooltip_paragraph,
+                active = activeBlock is ParagraphBlock,
+            ) { onAdd(ParagraphBlock()) }
+            ToolbarButton(
+                Icons.Rounded.CheckBox,
+                R.string.cd_block_task,
+                tooltipRes = R.string.block_tooltip_task,
+                active = activeBlock is TaskBlock,
+            ) { onAdd(TaskBlock()) }
+            ToolbarButton(
+                Icons.Rounded.UnfoldMore,
+                R.string.cd_block_toggle,
+                tooltipRes = R.string.block_tooltip_toggle,
+                active = activeBlock is ToggleBlock,
+            ) { onAdd(ToggleBlock()) }
+            ToolbarButton(
+                Icons.Rounded.FormatQuote,
+                R.string.cd_block_quote,
+                tooltipRes = R.string.block_tooltip_quote,
+                active = activeBlock is QuoteBlock,
+            ) { onAdd(QuoteBlock()) }
+            ToolbarButton(
+                Icons.Rounded.AddPhotoAlternate,
+                R.string.cd_attach_image,
+                tooltipRes = R.string.block_tooltip_image,
+                active = activeBlock is AttachmentBlock,
+            ) { onAttachImage() }
+        }
+
+        if (isImeVisible()) {
+            TooltipIconButton(
+                icon = Icons.Rounded.KeyboardHide,
+                contentDescription = stringResource(R.string.cd_hide_keyboard),
+                tooltip = stringResource(R.string.cd_hide_keyboard),
+                onClick = { keyboard?.hide() },
+                modifier = Modifier.padding(start = 4.dp),
+                testTag = "editor-hide-keyboard",
+            )
+        }
     }
 }
 
@@ -722,12 +901,17 @@ internal fun EditorToolbar(
 private fun ToolbarTextButton(
     label: String,
     descriptionRes: Int,
+    tooltip: String,
     active: Boolean,
     style: androidx.compose.ui.text.TextStyle,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Box(
+    val contentColor = if (active) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    TooltipAction(
+        tooltip = tooltip,
+        onClick = onClick,
         modifier = modifier
             .size(48.dp)
             .clip(CircleShape)
@@ -735,15 +919,12 @@ private fun ToolbarTextButton(
                 if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                 else Color.Transparent,
             )
-            .clickable(role = Role.Button, onClick = onClick)
             .testTag("editor-toolbar-button"),
-        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = style,
-            color = if (active) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = contentColor,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -755,10 +936,14 @@ private fun ToolbarTextButton(
 private fun ToolbarButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     descriptionRes: Int,
+    tooltipRes: Int,
     active: Boolean = false,
     onClick: () -> Unit,
 ) {
-    IconButton(
+    val contentColor = if (active) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    TooltipAction(
+        tooltip = stringResource(tooltipRes),
         onClick = onClick,
         modifier = Modifier
             .size(48.dp)
@@ -767,8 +952,7 @@ private fun ToolbarButton(
         Icon(
             imageVector = icon,
             contentDescription = stringResource(descriptionRes),
-            tint = if (active) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = contentColor,
         )
     }
 }
@@ -777,6 +961,8 @@ private fun ToolbarButton(
 private fun BlockRow(
     block: NoteBlock,
     focused: Boolean,
+    focusRequest: Boolean,
+    flash: Boolean,
     attachment: AttachmentEntity?,
     highlightQuery: String,
     highlightStyle: SpanStyle,
@@ -785,8 +971,25 @@ private fun BlockRow(
     onDelete: () -> Unit,
     onOpenImage: (String, String) -> Unit,
     onSaveAttachmentText: (AttachmentBlock, String) -> Unit,
+    onEnterNextTask: () -> Unit,
+    onSaveAndHome: (() -> Unit)?,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // Soft confirmation pulse: the new block briefly tints with the accent colour.
+    val flashAlpha = remember(block.id) { Animatable(0f) }
+    LaunchedEffect(flash) {
+        if (flash) {
+            flashAlpha.snapTo(1f)
+            flashAlpha.animateTo(0f, tween(420))
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f * flashAlpha.value),
+                RoundedCornerShape(10.dp),
+            ),
+    ) {
         Row(verticalAlignment = Alignment.Top) {
             Box(modifier = Modifier.weight(1f)) {
                 when (block) {
@@ -810,6 +1013,7 @@ private fun BlockRow(
                                 else R.string.block_subtitle_placeholder,
                             ),
                             onFocus = onFocus,
+                            requestFocus = focusRequest,
                             highlightQuery = highlightQuery,
                             highlightStyle = highlightStyle,
                             modifier = Modifier.padding(top = if (block.level <= 1) 14.dp else 10.dp),
@@ -824,6 +1028,7 @@ private fun BlockRow(
                         textStyle = MaterialTheme.typography.bodyLarge,
                         placeholder = stringResource(R.string.block_paragraph_placeholder),
                         onFocus = onFocus,
+                        requestFocus = focusRequest,
                         highlightQuery = highlightQuery,
                         highlightStyle = highlightStyle,
                         modifier = Modifier.padding(vertical = 6.dp),
@@ -849,6 +1054,8 @@ private fun BlockRow(
                             textStyle = MaterialTheme.typography.bodyLarge,
                             placeholder = stringResource(R.string.block_task_placeholder),
                             onFocus = onFocus,
+                            requestFocus = focusRequest,
+                            onSubmit = onEnterNextTask,
                             highlightQuery = highlightQuery,
                             highlightStyle = highlightStyle,
                             modifier = Modifier
@@ -857,7 +1064,11 @@ private fun BlockRow(
                         )
                     }
 
-                    is ToggleBlock -> Column(modifier = Modifier.fillMaxWidth()) {
+                    is ToggleBlock -> Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 6.dp),
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -895,6 +1106,7 @@ private fun BlockRow(
                                 textStyle = MaterialTheme.typography.titleMedium,
                                 placeholder = stringResource(R.string.block_toggle_placeholder),
                                 onFocus = onFocus,
+                                requestFocus = focusRequest,
                                 highlightQuery = highlightQuery,
                                 highlightStyle = highlightStyle,
                                 modifier = Modifier.weight(1f),
@@ -942,6 +1154,7 @@ private fun BlockRow(
                             ),
                             placeholder = stringResource(R.string.block_quote_placeholder),
                             onFocus = onFocus,
+                            requestFocus = focusRequest,
                             highlightQuery = highlightQuery,
                             highlightStyle = highlightStyle,
                             modifier = Modifier.weight(1f),
@@ -956,6 +1169,7 @@ private fun BlockRow(
                         onDelete = onDelete,
                         onOpenImage = onOpenImage,
                         onSaveText = onSaveAttachmentText,
+                        onSaveAndHome = onSaveAndHome,
                     )
                 }
             }
@@ -992,6 +1206,8 @@ private fun BlockTextField(
     highlightQuery: String,
     highlightStyle: SpanStyle,
     modifier: Modifier = Modifier,
+    requestFocus: Boolean = false,
+    onSubmit: (() -> Unit)? = null,
 ) {
     val transformation = remember(highlightQuery, highlightStyle) {
         if (highlightQuery.isBlank()) {
@@ -1006,10 +1222,17 @@ private fun BlockTextField(
         }
     }
     val requester = remember { BringIntoViewRequester() }
+    val focusRequester = remember { FocusRequester() }
     var fieldValue by remember {
         mutableStateOf(TextFieldValue(value, TextRange(value.length)))
     }
     var cursorRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) {
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
 
     LaunchedEffect(value) {
         if (fieldValue.text != value) {
@@ -1033,11 +1256,23 @@ private fun BlockTextField(
         modifier = modifier
             .fillMaxWidth()
             .bringIntoViewRequester(requester)
+            .focusRequester(focusRequester)
             .onFocusChanged { state -> if (state.isFocused) onFocus() }
             .testTag("editor-block-field"),
         textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         visualTransformation = transformation,
+        singleLine = onSubmit != null,
+        keyboardOptions = if (onSubmit != null) {
+            KeyboardOptions(imeAction = ImeAction.Next)
+        } else {
+            KeyboardOptions.Default
+        },
+        keyboardActions = if (onSubmit != null) {
+            KeyboardActions(onNext = { onSubmit.invoke() })
+        } else {
+            KeyboardActions.Default
+        },
         onTextLayout = { layout ->
             val cursor = fieldValue.selection.end
                 .coerceIn(0, layout.layoutInput.text.length)
@@ -1067,6 +1302,7 @@ private fun AttachmentCard(
     onDelete: () -> Unit,
     onOpenImage: (String, String) -> Unit,
     onSaveText: (AttachmentBlock, String) -> Unit,
+    onSaveAndHome: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val path = attachment?.filePath
@@ -1210,6 +1446,30 @@ private fun AttachmentCard(
                 }
             } else {
                 Spacer(Modifier.height(10.dp))
+            }
+
+            if (onSaveAndHome != null && block.previewText.isNotBlank()) {
+                Button(
+                    onClick = onSaveAndHome,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .heightIn(min = 48.dp)
+                        .testTag("ocr-save-home"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.ocr_save_home),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -1410,3 +1670,15 @@ private fun shareFile(context: Context, file: File, mimeType: String) {
     }
     context.startActivity(Intent.createChooser(intent, null))
 }
+
+/** Sanitized note title used as the exported file name (`.pdf` / `.md`). */
+private fun sanitizedExportName(title: String, noteId: Long): String {
+    val clean = title
+        .trim()
+        .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]+"), "-")
+        .replace(Regex("\\s+"), " ")
+        .trim(' ', '-', '.')
+    return clean.take(60).ifBlank { "Kribo-$noteId" }
+}
+
+private const val DELETE_UNDO_WINDOW_MS = 6_000L

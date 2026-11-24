@@ -158,31 +158,33 @@ fun CompactNoteRow(
             )
         }
 
-        IconButton(
-            onClick = onTogglePin,
-            modifier = Modifier.size(48.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.PushPin,
-                contentDescription = stringResource(R.string.cd_pin),
-                tint = if (note.isPinned) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                },
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.size(48.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Delete,
-                contentDescription = stringResource(R.string.home_note_options),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(19.dp),
-            )
+        if (!selectionMode) {
+            IconButton(
+                onClick = onTogglePin,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PushPin,
+                    contentDescription = stringResource(R.string.cd_pin),
+                    tint = if (note.isPinned) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                    },
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.home_note_options),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
         }
     }
 }

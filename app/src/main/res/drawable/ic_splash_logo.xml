@@ -3,22 +3,23 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Official Kribo mark: white pen-stroke K with the electric-cyan nib. -->
+    <path
+        android:pathData="M32,27 L32,81"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M66,27 L40,53"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M40,55 L62,78"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
     <path
         android:fillColor="#00D8FF"
-        android:pathData="M54,20 A34,34 0 1,1 53.99,20 Z" />
-    <path
-        android:pathData="M46,38 L46,70"
-        android:strokeColor="#0D1117"
-        android:strokeWidth="5.5"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M50,54 L65,38"
-        android:strokeColor="#0D1117"
-        android:strokeWidth="5.5"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M50,54 L65,70"
-        android:strokeColor="#0D1117"
-        android:strokeWidth="5.5"
-        android:strokeLineCap="round" />
+        android:pathData="M58,72 L80,94 L60,88 Z" />
 </vector>

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.Sync
@@ -52,6 +53,9 @@ import com.blackeye.kribo.ui.common.findActivity
 import com.blackeye.kribo.ui.common.formatNoteDate
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
+import com.blackeye.kribo.ui.components.TooltipIconButton
+import com.blackeye.kribo.ui.onboarding.GuideTopic
+import com.blackeye.kribo.ui.onboarding.GuideTopicModal
 
 enum class DriveSyncMessage {
     DONE,
@@ -83,6 +87,7 @@ fun DriveSyncScreen(
     var connectTrigger by remember { mutableIntStateOf(0) }
     var syncTrigger by remember { mutableIntStateOf(0) }
     var showDisconnect by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
 
     val authLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -169,6 +174,15 @@ fun DriveSyncScreen(
     AppScreen(
         title = stringResource(R.string.drive_sync_title),
         onBack = onBack,
+        actions = {
+            TooltipIconButton(
+                icon = Icons.AutoMirrored.Rounded.HelpOutline,
+                contentDescription = stringResource(R.string.cd_help),
+                tooltip = stringResource(R.string.cd_help),
+                onClick = { showHelp = true },
+                testTag = "drive-help",
+            )
+        },
     ) {
         DriveSyncContent(
             connected = session.connected,
@@ -217,6 +231,13 @@ fun DriveSyncScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+
+    if (showHelp) {
+        GuideTopicModal(
+            topic = GuideTopic.GOOGLE_DRIVE,
+            onDismiss = { showHelp = false },
+        )
     }
 }
 

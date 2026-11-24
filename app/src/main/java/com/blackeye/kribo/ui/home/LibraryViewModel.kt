@@ -13,7 +13,10 @@ import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
+import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
+import com.blackeye.kribo.data.blocks.TitleBlock
+import com.blackeye.kribo.data.blocks.ToggleBlock
 import com.blackeye.kribo.data.previewText
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ocr.OcrQuotaStore
@@ -70,6 +73,17 @@ data class BackupUiState(
     val total: Int = 0,
 )
 
+/** Localized copy for the one-time interactive welcome note. */
+data class WelcomeNoteText(
+    val title: String,
+    val subtitle: String,
+    val taskOne: String,
+    val taskTwo: String,
+    val toggleTitle: String,
+    val toggleContent: String,
+    val quote: String,
+)
+
 /**
  * Single library state shared by Home, Search and Settings. Holds the selected folder, the
  * instant search query, scan progress and import/export progress.
@@ -121,6 +135,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     val selectedIds: StateFlow<Set<Long>> = _selectedIds.asStateFlow()
 
     private val attachmentPathCache = mutableMapOf<Long, String?>()
+    private var welcomeNoteChecked = false
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
@@ -176,7 +191,10 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun deleteNotes(noteIds: Set<Long>) {
         if (noteIds.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            noteIds.forEach { repository.deleteNote(it) }
+            noteIds.forEach {
+                repository.deleteNote(it)
+                attachmentPathCache.remove(it)
+            }
         }
         clearSelection()
     }
@@ -216,6 +234,44 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun deleteNote(noteId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteNote(noteId)
+            attachmentPathCache.remove(noteId)
+        }
+    }
+
+    /**
+     * Seeds a single interactive welcome note on a truly fresh library, then remembers it.
+     * Existing users (DB with notes) are marked as seeded without creating anything.
+     */
+    fun ensureWelcomeNote(text: WelcomeNoteText) {
+        if (welcomeNoteChecked) return
+        welcomeNoteChecked = true
+        viewModelScope.launch {
+            if (container.uiPreferences.isWelcomeNoteSeeded()) return@launch
+            val existing = withContext(Dispatchers.IO) { repository.noteCount() }
+            if (existing > 0) {
+                withContext(Dispatchers.IO) { container.uiPreferences.markWelcomeNoteSeeded() }
+                return@launch
+            }
+            val blocks = listOf(
+                TitleBlock(text = text.title),
+                TitleBlock(text = text.subtitle, level = 2),
+                TaskBlock(text = text.taskOne),
+                TaskBlock(text = text.taskTwo),
+                ToggleBlock(
+                    title = text.toggleTitle,
+                    content = text.toggleContent,
+                    expanded = false,
+                ),
+                QuoteBlock(text = text.quote),
+            )
+            withContext(Dispatchers.IO) {
+                repository.createNote(
+                    folderId = DEFAULT_FOLDER_GENERAL,
+                    blocks = blocks,
+                    title = text.title,
+                )
+                container.uiPreferences.markWelcomeNoteSeeded()
+            }
         }
     }
 
@@ -337,6 +393,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 
                 _scanState.update { it.copy(page = 0, totalPages = candidates.size) }
                 val blocks = mutableListOf<NoteBlock>()
+                val ocrTexts = mutableListOf<String>()
                 var savedPages = 0
                 var ocrPages = 0
 
@@ -349,7 +406,10 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                         pageNumber = index + 1,
                     ) ?: return@forEachIndexed
                     savedPages++
-                    if (text.isNotBlank()) ocrPages++
+                    if (text.isNotBlank()) {
+                        ocrPages++
+                        ocrTexts += text
+                    }
 
                     val attachmentId = withContext(Dispatchers.IO) {
                         repository.addAttachment(
@@ -374,7 +434,15 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                     return@launch
                 }
 
-                // saveBlocks rebuilds plainTextIndex + ocrTextIndex with the full OCR text.
+                // Automatic, editable headline derived from the recognised text. It is a real
+                // TitleBlock, so the user can rename the scan directly in the editor.
+                val autoTitle = autoTitleFromOcr(ocrTexts)
+                if (autoTitle.isNotBlank()) {
+                    blocks.add(0, TitleBlock(text = autoTitle))
+                }
+
+                // Persist the blocks (and therefore the title + search index) before consuming
+                // the free quota or navigating, so a failed scan never costs a scan.
                 withContext(Dispatchers.IO) { repository.saveBlocks(id, blocks) }
 
                 if (ocrPages > 0) {
@@ -382,8 +450,11 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                     _freeScansLeft.value = container.quotaStore.remaining(isPro())
                 }
 
-                // A new scan must not be hidden by an old search filter.
+                // A new scan must not stay hidden behind an old folder/search filter: the note
+                // is already committed to Room, so both "Recibos" and "Todas" refresh at once.
                 query.value = ""
+                selectedFolderId.value = null
+                attachmentPathCache.clear()
                 _scanState.value = ScanUiState(phase = ScanPhase.COMPLETE, noteId = id)
             } catch (throwable: Throwable) {
                 noteId?.let { id ->
@@ -541,6 +612,26 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 }
 
 private const val SCAN_FOLDER_NAME = "Recibos"
+
+/**
+ * Turns the first meaningful OCR line into a short, editable note title. Control characters,
+ * repeated spaces and edge punctuation are removed; accents and letters stay untouched.
+ */
+private fun autoTitleFromOcr(ocrTexts: List<String>): String {
+    val candidate = ocrTexts.asSequence()
+        .flatMap { it.lineSequence() }
+        .map { line ->
+            line.replace(Regex("\\p{Cntrl}+"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }
+        .firstOrNull { line -> line.count(Char::isLetterOrDigit) >= 3 }
+        ?: return ""
+    return candidate
+        .trim(' ', '-', '–', '—', '·', '|', '.', ',', ';', ':', '/', '\\')
+        .take(60)
+        .trim()
+}
 
 /** Accent/case-insensitive match across title, body and OCR text. */
 private fun NoteEntity.matchesQuery(query: String): Boolean =

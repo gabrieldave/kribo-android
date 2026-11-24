@@ -41,11 +41,11 @@ class ProLimitsTest {
     }
 
     @Test
-    fun backupAndWifiAreProOnly() {
-        assertFalse(ProLimits.canExportBackup(isPro = false))
+    fun backupIsFreeWhileWifiAndDriveAreProOnly() {
+        assertTrue("ZIP export is part of the free plan", ProLimits.canExportBackup(isPro = false))
+        assertTrue(ProLimits.canExportBackup(isPro = true))
         assertFalse(ProLimits.canUseWifi(isPro = false))
         assertFalse(ProLimits.canUseDrive(isPro = false))
-        assertTrue(ProLimits.canExportBackup(isPro = true))
         assertTrue(ProLimits.canUseWifi(isPro = true))
         assertTrue(ProLimits.canUseDrive(isPro = true))
     }
