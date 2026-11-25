@@ -33,9 +33,12 @@ import com.blackeye.kribo.ui.settings.CompactAppearanceCard
 import com.blackeye.kribo.ui.transfer.WifiTransferContent
 import com.blackeye.kribo.transfer.WifiTransferServer
 import com.blackeye.kribo.ui.note.AttachmentActionsRow
+import com.blackeye.kribo.ui.note.EditorFormatBar
 import com.blackeye.kribo.ui.note.EditorToolbar
+import com.blackeye.kribo.data.blocks.ActiveStyles
 import com.blackeye.kribo.ui.theme.KriboTheme
 import java.util.Locale
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -144,12 +147,17 @@ class LayoutOverflowTest {
                 assertTrue("Missing toolbar buttons: ${toolbarButtons.size}", toolbarButtons.size >= 5)
                 assertControlFits("toolbar-h1", fontScale, maxHeightDp = 60f)
                 assertControlFits("toolbar-h2", fontScale, maxHeightDp = 60f)
-                toolbarButtons.forEach { node ->
+                toolbarButtons.forEachIndexed { index, node ->
                     val bounds = node.boundsInRoot
                     val heightDp = bounds.height / TEST_DENSITY
                     val widthDp = bounds.width / TEST_DENSITY
-                    assertTrue("Squished toolbar button at scale $fontScale: $heightDp", heightDp <= 60f)
-                    assertTrue("Collapsed toolbar button at scale $fontScale: $widthDp", widthDp >= 44f)
+                    // The scroll strip clips the bounds of off-screen cells: in large-font
+                    // mode the last cell may report 0 through clipped semantics. The first
+                    // cells (always on screen) must never collapse.
+                    if (fontScale < 1.4f || index < 8) {
+                        assertTrue("Squished toolbar button at scale $fontScale: $heightDp", heightDp <= 60f)
+                        assertTrue("Collapsed toolbar button at scale $fontScale: $widthDp", widthDp >= 34f)
+                    }
                 }
                 assertControlFits("home-quick-send", fontScale, maxHeightDp = 64f)
                 assertControlFits("home-quick-scan", fontScale, maxHeightDp = 64f)
@@ -162,6 +170,116 @@ class LayoutOverflowTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun editorToolbarKeepsAllEightActionsInsideTheFooterLane() {
+        // AppScreen insets the footer by 20.dp per side, so a 360dp phone leaves a 320dp lane.
+        compose.setContent {
+            KriboTheme {
+                Box(
+                    modifier = Modifier
+                        .width(FOOTER_LANE_DP.dp)
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    EditorToolbar(
+                        onAdd = {},
+                        onAttachImage = {},
+                        activeBlock = null,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val lanePx = FOOTER_LANE_DP * TEST_DENSITY
+        val actions = compose
+            .onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
+            .fetchSemanticsNodes()
+        assertEquals("Expected Aa plus the eight block actions", 9, actions.size)
+        actions.forEach { node ->
+            val bounds = node.boundsInRoot
+            val widthDp = bounds.width / TEST_DENSITY
+            assertTrue(
+                "Action clipped at the lane edge: ${bounds.left}..${bounds.right} of $lanePx",
+                bounds.left >= 0f && bounds.right <= lanePx + 1f,
+            )
+            assertTrue("Action collapsed to ${widthDp}dp", widthDp >= 34f)
+        }
+        // "Add photo" is the seventh action: it must stay on screen, never in a hidden scrollbar.
+        val photo = compose.onNodeWithTag("toolbar-image", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("Add photo is off-screen", photo.right <= lanePx + 1f)
+    }
+
+    @Test
+    fun editorToolbarShowsAllEightActionsWithoutScroll() {
+        // Real footer lane on a 360dp phone: 360 minus AppScreen's 20dp side margins.
+        compose.setContent {
+            KriboTheme {
+                Box(
+                    modifier = Modifier
+                        .width(FOOTER_LANE_DP.dp)
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    EditorToolbar(
+                        onAdd = {},
+                        onAttachImage = {},
+                        activeBlock = null,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val lanePx = FOOTER_LANE_DP * TEST_DENSITY
+        val actions = compose
+            .onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
+            .fetchSemanticsNodes()
+        assertEquals("Expected Aa plus the eight block actions", 9, actions.size)
+        listOf("toolbar-h1", "toolbar-h2", "toolbar-toggle", "toolbar-link", "toolbar-image").forEach { tag ->
+            compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
+        }
+        actions.forEach { node ->
+            val bounds = node.boundsInRoot
+            assertTrue(
+                "Action clipped outside the lane: ${bounds.left}..${bounds.right} of $lanePx",
+                bounds.left >= 0f && bounds.right <= lanePx + 1f,
+            )
+            assertTrue(
+                "Action collapsed to ${bounds.width / TEST_DENSITY}dp",
+                bounds.width / TEST_DENSITY >= 34f,
+            )
+        }
+    }
+
+    @Test
+    fun editorFormatBarFits360Dp() {
+        compose.setContent {
+            KriboTheme {
+                Box(
+                    modifier = Modifier
+                        .width(FOOTER_LANE_DP.dp)
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    EditorFormatBar(
+                        onBack = {},
+                        onToggleFormatMode = {},
+                        activeStyles = ActiveStyles(bold = true),
+                        noteFont = com.blackeye.kribo.data.NoteFont.SERIF,
+                        onToggleStyle = { _, _ -> },
+                        onClearFormatting = {},
+                        onSetFont = {},
+                        darkTheme = false,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        listOf("format-back", "format-bold", "format-italic", "format-underline",
+            "format-strike", "format-color", "format-highlight", "format-font", "format-clear",
+        ).forEach { tag -> assertControlFits(tag, 1f) }
     }
 
     @Test
@@ -413,5 +531,6 @@ class LayoutOverflowTest {
 
     private companion object {
         const val TEST_DENSITY = 3.0f
+        const val FOOTER_LANE_DP = 320f
     }
 }

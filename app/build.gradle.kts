@@ -46,8 +46,8 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.0.12"
+        versionCode = 16
+        versionName = "1.0.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -76,6 +76,8 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // Parallel install ("Kribo Debug") that coexists with the release app.
+            resValue("string", "app_name", "Kribo Debug")
         }
 
         release {

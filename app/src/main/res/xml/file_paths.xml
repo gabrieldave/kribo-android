@@ -2,5 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="exports" path="exports/" />
     <cache-path name="camera" path="camera/" />
+    <cache-path name="shared_ai" path="shared_ai/" />
     <files-path name="attachments" path="attachments/" />
 </paths>

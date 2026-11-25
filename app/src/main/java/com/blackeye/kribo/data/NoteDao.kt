@@ -1,11 +1,18 @@
 package com.blackeye.kribo.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
+
+/** One GROUP BY row for the folder picker at scale. */
+data class FolderNoteCount(
+    @ColumnInfo(name = "folderId") val folderId: Long?,
+    @ColumnInfo(name = "count") val count: Int,
+)
 
 @Dao
 interface NoteDao {
@@ -29,6 +36,10 @@ interface NoteDao {
 
     @Query("SELECT COUNT(*) FROM notes")
     suspend fun count(): Int
+
+    /** Notes per folder for the 500-folder picker (null folderId = no folder). */
+    @Query("SELECT folderId AS folderId, COUNT(*) AS count FROM notes GROUP BY folderId")
+    fun observeFolderCounts(): Flow<List<FolderNoteCount>>
 
     @Query("SELECT * FROM notes ORDER BY updatedAt DESC")
     suspend fun getAllNow(): List<NoteEntity>

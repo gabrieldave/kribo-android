@@ -67,6 +67,18 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/**
+ * v2 → v3 · non destructive.
+ *
+ * Adds the per-note editorial font (`fontStyle`, default SANS) for #42. Existing notes
+ * keep every block and every byte; they simply read back as SANS.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `notes` ADD COLUMN `fontStyle` TEXT NOT NULL DEFAULT 'SANS'")
+    }
+}
+
 internal const val DEFAULT_FOLDER_GENERAL = 1L
 internal const val DEFAULT_FOLDER_RECEIPTS = 2L
 internal const val DEFAULT_FOLDER_IDEAS = 3L

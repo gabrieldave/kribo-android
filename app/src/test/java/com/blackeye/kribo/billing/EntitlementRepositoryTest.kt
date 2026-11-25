@@ -40,8 +40,13 @@ class EntitlementRepositoryTest {
     private fun TestScope.newRepository(
         source: BillingSource,
         store: com.blackeye.kribo.security.SecureKeyValueStore,
-    ): EntitlementRepository =
-        EntitlementRepository(source, store, CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
+        debugOverride: Boolean = false,
+    ): EntitlementRepository = EntitlementRepository(
+        source,
+        store,
+        CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+        debugOverride,
+    )
 
     @Test
     fun startsFromEncryptedCacheWhenOffline() = runTest {
@@ -101,6 +106,33 @@ class EntitlementRepositoryTest {
         var restored: Boolean? = null
         repository.restore { restored = it }
         assertEquals(true, restored)
+    }
+
+    @Test
+    fun debugBuildIsProImmediatelyWithoutPlay() = runTest {
+        val source = FakeSource(BillingUiState(connected = false, resolved = false))
+        val repository = newRepository(source, InMemorySecureStore(), debugOverride = true)
+        advanceUntilIdle()
+
+        assertTrue(repository.isPro.value)
+        assertTrue(repository.resolved.value)
+    }
+
+    @Test
+    fun releaseBuildNeverGrantsFreePro() = runTest {
+        // Empty cache + Play saying "no purchase": non-debug must stay non-PRO.
+        val store = InMemorySecureStore()
+        val source = FakeSource(BillingUiState(connected = true, owned = false, resolved = false))
+        val repository = newRepository(source, store, debugOverride = false)
+        advanceUntilIdle()
+        assertFalse(repository.isPro.value)
+        assertFalse(repository.resolved.value)
+
+        source.mutable.value = BillingUiState(connected = true, owned = false, resolved = true)
+        advanceUntilIdle()
+        assertFalse(repository.isPro.value)
+        assertTrue(repository.resolved.value)
+        assertEquals("0", store.get(EntitlementRepository.KEY_PRO_CACHE))
     }
 
     @Test

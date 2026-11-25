@@ -24,6 +24,7 @@ data class TitleBlock(
     override val id: String = BlockCodec.newId(),
     val text: String = "",
     val level: Int = 1,
+    val spans: List<InlineSpan> = emptyList(),
 ) : NoteBlock {
     override fun plainText(): String = text
 }
@@ -33,6 +34,7 @@ data class TitleBlock(
 data class ParagraphBlock(
     override val id: String = BlockCodec.newId(),
     val text: String = "",
+    val spans: List<InlineSpan> = emptyList(),
 ) : NoteBlock {
     override fun plainText(): String = text
 }
@@ -43,6 +45,7 @@ data class TaskBlock(
     override val id: String = BlockCodec.newId(),
     val text: String = "",
     val checked: Boolean = false,
+    val spans: List<InlineSpan> = emptyList(),
 ) : NoteBlock {
     override fun plainText(): String = if (checked) "[x] $text" else "[ ] $text"
 }
@@ -54,10 +57,22 @@ data class ToggleBlock(
     val title: String = "",
     val content: String = "",
     val expanded: Boolean = false,
+    val titleSpans: List<InlineSpan> = emptyList(),
+    val contentSpans: List<InlineSpan> = emptyList(),
 ) : NoteBlock {
     override fun plainText(): String = listOf(title, content)
         .filter { it.isNotBlank() }
         .joinToString(separator = " ")
+
+    companion object {
+        /**
+         * A section inserted by the user starts **open** so the title and the inner field are
+         * visible immediately. Saved notes keep whatever `expanded` value they were stored with
+         * (the data-class default stays `false`, which is what older payloads decode to).
+         */
+        fun newSection(title: String = "", content: String = ""): ToggleBlock =
+            ToggleBlock(title = title, content = content, expanded = true)
+    }
 }
 
 @Serializable
@@ -65,8 +80,23 @@ data class ToggleBlock(
 data class QuoteBlock(
     override val id: String = BlockCodec.newId(),
     val text: String = "",
+    val spans: List<InlineSpan> = emptyList(),
 ) : NoteBlock {
     override fun plainText(): String = text
+}
+
+@Serializable
+@SerialName("link")
+data class LinkBlock(
+    override val id: String = BlockCodec.newId(),
+    /** Raw text as typed; opened through [normalizeUrl], which only allows http/https. */
+    val url: String = "",
+    /** Optional display label; backs use the URL when blank. Older JSON without it decodes empty. */
+    val label: String = "",
+) : NoteBlock {
+    override fun plainText(): String = listOf(label, url)
+        .filter { it.isNotBlank() }
+        .joinToString(separator = " ")
 }
 
 @Serializable

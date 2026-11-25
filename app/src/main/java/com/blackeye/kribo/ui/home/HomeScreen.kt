@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -39,7 +40,9 @@ import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DocumentScanner
@@ -54,6 +57,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
@@ -63,6 +67,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
@@ -100,8 +106,11 @@ import com.blackeye.kribo.R
 import com.blackeye.kribo.billing.BillingUiState
 import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.NoteEntity
+import com.blackeye.kribo.data.export.NoteExportPayload
+import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.common.findActivity
+import com.blackeye.kribo.ui.share.AiShareSheet
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.BentoNoteCard
@@ -111,6 +120,7 @@ import com.blackeye.kribo.ui.components.EmptyStateCard
 import com.blackeye.kribo.ui.components.TooltipIconButton
 import com.blackeye.kribo.ui.components.TooltipTextButton
 import com.blackeye.kribo.ui.components.hideKeyboardOnScroll
+import com.blackeye.kribo.ui.components.rememberKeyboardScrollGuard
 import com.blackeye.kribo.ui.preferences.HomeLayout
 import com.blackeye.kribo.ui.preferences.UiPreferences
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
@@ -136,6 +146,11 @@ fun HomeScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val activeFolderId by viewModel.activeFolderId.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val searchAllScope by viewModel.searchAllScopeActive.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortModeActive.collectAsStateWithLifecycle()
+    val folderCounts by viewModel.folderCounts.collectAsStateWithLifecycle()
+    val matchingFolders by viewModel.matchingFolders.collectAsStateWithLifecycle()
+    val totalNoteCount = remember(folderCounts) { folderCounts.values.sum() }
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
     val paywallReason by viewModel.paywallReason.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
@@ -148,7 +163,10 @@ fun HomeScreen(
     var draftName by rememberSaveable { mutableStateOf("") }
     var captureText by rememberSaveable { mutableStateOf("") }
     var showBulkDelete by remember { mutableStateOf(false) }
+    var showAiShare by remember { mutableStateOf(false) }
+    var aiPayloads by remember { mutableStateOf<List<NoteExportPayload>>(emptyList()) }
     var showMovePicker by remember { mutableStateOf(false) }
+    var showFolderPickerSheet by remember { mutableStateOf(false) }
     val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
     val selectedNotes = remember(notes, selectedIds) { notes.filter { it.note.id in selectedIds } }
@@ -159,6 +177,7 @@ fun HomeScreen(
     val largeFont = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.4f
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val keyboardGuard = rememberKeyboardScrollGuard()
     val allSelected = notes.isNotEmpty() && selectedIds.size == notes.size
     var searchFocused by remember { mutableStateOf(false) }
     var searchMode by remember { mutableStateOf(false) }
@@ -362,6 +381,42 @@ fun HomeScreen(
                             },
                         )
                         DropdownMenuItem(
+                            text = { Text(stringResource(R.string.home_sort_recent)) },
+                            leadingIcon = {
+                                if (sortMode == NoteSort.RECENT) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null)
+                                }
+                            },
+                            onClick = {
+                                homeMenuExpanded = false
+                                viewModel.setSortMode(NoteSort.RECENT)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.home_sort_title)) },
+                            leadingIcon = {
+                                if (sortMode == NoteSort.TITLE_ASC) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null)
+                                }
+                            },
+                            onClick = {
+                                homeMenuExpanded = false
+                                viewModel.setSortMode(NoteSort.TITLE_ASC)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.home_sort_oldest)) },
+                            leadingIcon = {
+                                if (sortMode == NoteSort.OLDEST) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null)
+                                }
+                            },
+                            onClick = {
+                                homeMenuExpanded = false
+                                viewModel.setSortMode(NoteSort.OLDEST)
+                            },
+                        )
+                        DropdownMenuItem(
                             text = { Text(stringResource(R.string.home_import_action)) },
                             leadingIcon = {
                                 Icon(
@@ -385,6 +440,15 @@ fun HomeScreen(
                     onMove = { showMovePicker = true },
                     onPin = {
                         viewModel.setPinnedFor(selectedIds, !allSelectedPinned)
+                    },
+                    onShareToAi = {
+                        undoScope.launch {
+                            val payloads = viewModel.buildAiPayloads(selectedIds)
+                            if (payloads.isNotEmpty()) {
+                                aiPayloads = payloads
+                                showAiShare = true
+                            }
+                        }
                     },
                     onDelete = { showBulkDelete = true },
                 )
@@ -441,7 +505,10 @@ fun HomeScreen(
                     .weight(1f)
                     .onFocusChanged { focus ->
                         searchFocused = focus.isFocused
-                        if (focus.isFocused) searchMode = true
+                        if (focus.isFocused) {
+                            searchMode = true
+                            keyboardGuard.onFocusChanged()
+                        }
                     },
                 placeholder = { Text(stringResource(R.string.home_search_placeholder)) },
                 leadingIcon = {
@@ -478,6 +545,12 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+            FolderChip(
+                label = stringResource(R.string.home_folders_chip, totalNoteCount),
+                color = MaterialTheme.colorScheme.primary,
+                selected = showFolderPickerSheet,
+                onClick = { showFolderPickerSheet = true },
+            )
             FolderChip(
                 label = stringResource(R.string.home_filter_all),
                 color = MaterialTheme.colorScheme.primary,
@@ -520,6 +593,66 @@ fun HomeScreen(
 
         Spacer(Modifier.height(8.dp))
 
+        // Search scope chips: when a folder is selected the user can jump between searching
+        // every note and only that folder, switching context in one tap.
+        if (query.isNotBlank() && activeFolderId != null) {
+            val activeName = folders.firstOrNull { it.id == activeFolderId }?.name.orEmpty()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FolderChip(
+                    label = stringResource(R.string.home_scope_all),
+                    color = MaterialTheme.colorScheme.primary,
+                    selected = searchAllScope,
+                    onClick = { viewModel.setSearchScopeAll(true) },
+                )
+                FolderChip(
+                    label = stringResource(R.string.home_scope_folder, activeName),
+                    color = MaterialTheme.colorScheme.primary,
+                    selected = !searchAllScope,
+                    onClick = { viewModel.setSearchScopeAll(false) },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Folder-name matches for the current query: jump straight into a folder.
+        if (query.isNotBlank() && matchingFolders.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                matchingFolders.forEach { folder ->
+                    FolderChip(
+                        label = folder.name + " · " + (folderCounts[folder.id] ?: 0),
+                        color = folder.color(),
+                        selected = false,
+                        onClick = { viewModel.selectFolder(folder.id) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        if (query.isNotBlank()) {
+            Text(
+                text = stringResource(R.string.home_results_count, notes.size),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+
         Box(modifier = Modifier.weight(1f)) {
             if (notes.isEmpty()) {
                 EmptyStateCard(
@@ -534,9 +667,13 @@ fun HomeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .hideKeyboardOnScroll(),
+                        .hideKeyboardOnScroll(keyboardGuard),
                 ) {
-                    itemsIndexed(items = notes, key = { _, item -> item.note.id }) { index, item ->
+                    itemsIndexed(
+                        items = notes,
+                        key = { _, item -> item.note.id },
+                        contentType = { _, _ -> "note" },
+                    ) { index, item ->
                         if (index > 0) {
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
@@ -569,11 +706,11 @@ fun HomeScreen(
                     columns = StaggeredGridCells.Fixed(2),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .hideKeyboardOnScroll(),
+                        .hideKeyboardOnScroll(keyboardGuard),
                     verticalItemSpacing = 10.dp,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(items = notes, key = { item -> item.note.id }) { item ->
+                    items(items = notes, key = { item -> item.note.id }, contentType = { "note" }) { item ->
                         BentoNoteCard(
                             item = item,
                             query = query,
@@ -600,6 +737,13 @@ fun HomeScreen(
         SnackbarHost(hostState = snackbarHostState)
     }
 
+    if (showAiShare) {
+        AiShareSheet(
+            notes = aiPayloads,
+            onDismiss = { showAiShare = false },
+        )
+    }
+
     if (showBulkDelete) {
         AppModal(
             onDismissRequest = { showBulkDelete = false },
@@ -619,40 +763,32 @@ fun HomeScreen(
         }
     }
 
+    if (showFolderPickerSheet) {
+        FolderPickerSheet(
+            folders = folders,
+            counts = folderCounts,
+            selectedId = activeFolderId,
+            onSelect = { id ->
+                showFolderPickerSheet = false
+                viewModel.selectFolder(id)
+            },
+            onCreateFolder = { name -> viewModel.createFolder(name) },
+            onDismiss = { showFolderPickerSheet = false },
+        )
+    }
+
     if (showMovePicker) {
-        AppModal(
-            onDismissRequest = { showMovePicker = false },
-            title = stringResource(R.string.home_move_title),
-            dismissLabel = stringResource(R.string.action_cancel),
-        ) {
-            folders.forEach { folder ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clickable {
-                            viewModel.moveNotesToFolder(selectedIds, folder.id)
-                            showMovePicker = false
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(folder.color()),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = folder.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
+        FolderPickerSheet(
+            folders = folders,
+            counts = folderCounts,
+            selectedId = null,
+            onSelect = { id ->
+                showMovePicker = false
+                viewModel.moveNotesToFolder(selectedIds, id)
+            },
+            onCreateFolder = { name -> viewModel.createFolder(name) },
+            onDismiss = { showMovePicker = false },
+        )
     }
 
     notePendingDelete?.let { note ->
@@ -874,6 +1010,7 @@ internal fun BulkSelectionBar(
     anyPinned: Boolean,
     onMove: () -> Unit,
     onPin: () -> Unit,
+    onShareToAi: () -> Unit,
     onDelete: () -> Unit,
 ) {
     FlowRow(
@@ -896,6 +1033,12 @@ internal fun BulkSelectionBar(
             ),
             tag = "home-bulk-pin",
             onClick = onPin,
+        )
+        BulkActionButton(
+            icon = Icons.Rounded.AutoAwesome,
+            label = stringResource(R.string.ai_share_title),
+            tag = "home-bulk-ai",
+            onClick = onShareToAi,
         )
         BulkActionButton(
             icon = Icons.Rounded.Delete,
@@ -1139,5 +1282,171 @@ private fun FolderChip(
 private fun FolderEntity.color(): Color = runCatching {
     Color(android.graphics.Color.parseColor(colorHex))
 }.getOrDefault(Color(0xFF00D8FF))
+
+/**
+ * Searchable folder selector (#41) shared by Home, the editor folder chip and bulk move.
+ * A vertical bottom sheet with instant search, per-folder counts and in-place creation.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FolderPickerSheet(
+    folders: List<FolderEntity>,
+    counts: Map<Long?, Int>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+    onCreateFolder: ((String) -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var search by rememberSaveable { mutableStateOf("") }
+    var creating by rememberSaveable { mutableStateOf(false) }
+    var newName by rememberSaveable { mutableStateOf("") }
+    val visible = remember(folders, search) {
+        if (search.isBlank()) folders
+        else folders.filter { SearchText.contains(it.name, search) }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(stringResource(R.string.home_folder_search_hint)) },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                singleLine = true,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                item(key = "all", contentType = "folder") {
+                    FolderPickerRow(
+                        dotColor = MaterialTheme.colorScheme.primary,
+                        label = stringResource(R.string.home_filter_all),
+                        count = counts.values.sum(),
+                        selected = selectedId == null,
+                        onClick = { onSelect(null) },
+                    )
+                }
+                items(items = visible, key = { it.id }, contentType = { "folder" }) { folder ->
+                    FolderPickerRow(
+                        dotColor = folder.color(),
+                        label = folder.name,
+                        count = counts[folder.id] ?: 0,
+                        selected = selectedId == folder.id,
+                        onClick = { onSelect(folder.id) },
+                    )
+                }
+            }
+            if (onCreateFolder != null) {
+                if (creating) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(R.string.folder_name_hint)) },
+                            singleLine = true,
+                            maxLines = 1,
+                        )
+                        TextButton(
+                            onClick = {
+                                val clean = newName.trim()
+                                if (clean.isNotBlank()) onCreateFolder(clean)
+                                newName = ""
+                                creating = false
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.action_accept),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                } else {
+                    TextButton(
+                        onClick = { creating = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.CreateNewFolder,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(R.string.folder_new),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun FolderPickerRow(
+    dotColor: Color,
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(CircleShape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(dotColor),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
 
 private const val DELETE_UNDO_WINDOW_MS = 6_000L

@@ -1,5 +1,6 @@
 package com.blackeye.kribo.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -45,6 +46,9 @@ data class NoteEntity(
     val isPinned: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Per-note editorial font (#42); SANS for everything created before v3. */
+    @ColumnInfo(defaultValue = "'SANS'")
+    val fontStyle: String = "SANS",
 )
 
 @Entity(

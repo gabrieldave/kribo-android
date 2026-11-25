@@ -51,6 +51,8 @@ data class RemoteNote(
     val blocks: JsonElement = JsonArray(emptyList()),
     val plainText: String = "",
     val ocrText: String = "",
+    /** Editorial font (#42); older backups omit it and decode as SANS. */
+    val fontStyle: String = "SANS",
     val attachments: List<RemoteAttachmentRef> = emptyList(),
 )
 

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MicNone
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Star
@@ -255,6 +256,45 @@ fun SettingsScreen(
                                 paywallReason = PaywallReason.WIFI_LOCKED
                             }
                         },
+                    )
+                }
+            }
+
+            SettingsDivider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 64.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .testTag("settings-dictation-row"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconTile(Icons.Rounded.MicNone)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_dictation_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_dictation_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_dictation_badge),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

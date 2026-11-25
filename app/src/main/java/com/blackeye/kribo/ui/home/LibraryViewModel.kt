@@ -13,11 +13,14 @@ import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
+import com.blackeye.kribo.data.blocks.newNoteBlocks
 import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.data.blocks.ToggleBlock
 import com.blackeye.kribo.data.previewText
+import com.blackeye.kribo.data.titleText
+import com.blackeye.kribo.data.export.NoteExportPayload
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ocr.OcrQuotaStore
 import com.blackeye.kribo.ui.billing.PaywallReason
@@ -30,6 +33,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -49,6 +54,22 @@ data class NoteListItem(
     val tasksTotal: Int,
     val attachmentPath: String?,
 )
+
+/** Home ordering (#41): pinned notes always stay on top, then the chosen key. */
+enum class NoteSort { RECENT, TITLE_ASC, OLDEST }
+
+/** Pinned first, then by [sort]; the list in memory stays keyed by id for stable diffs. */
+fun sortNoteItems(items: List<NoteListItem>, sort: NoteSort): List<NoteListItem> =
+    items.sortedWith { a, b ->
+        val pinned = b.note.isPinned.compareTo(a.note.isPinned)
+        if (pinned != 0) return@sortedWith pinned
+        when (sort) {
+            NoteSort.RECENT -> b.note.updatedAt.compareTo(a.note.updatedAt)
+            NoteSort.OLDEST -> a.note.updatedAt.compareTo(b.note.updatedAt)
+            NoteSort.TITLE_ASC -> SearchText.fold(a.note.titleText)
+                .compareTo(SearchText.fold(b.note.titleText))
+        }
+    }
 
 enum class ScanPhase { IDLE, SCANNING, COMPLETE, ERROR }
 
@@ -99,19 +120,56 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     private val query = MutableStateFlow("")
     val searchQuery: StateFlow<String> = query.asStateFlow()
 
+    /** Search scope: true = every note, false = only inside [activeFolderId]. */
+    private val searchAllScope = MutableStateFlow(true)
+    val searchAllScopeActive: StateFlow<Boolean> = searchAllScope.asStateFlow()
+
+    private val sortMode = MutableStateFlow(NoteSort.RECENT)
+    val sortModeActive: StateFlow<NoteSort> = sortMode.asStateFlow()
+
     val folders: StateFlow<List<FolderEntity>> = repository.observeFolders()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val notes: StateFlow<List<NoteListItem>> = combine(selectedFolderId, query) { folder, text ->
-        folder to text
-    }.flatMapLatest { (folder, text) ->
-        // Accent-insensitive matching cannot be delegated to SQLite LIKE, so the folder flow is
-        // filtered in memory with Normalizer.Form.NFD. It keeps `cancion` finding `canción`.
-        repository.observeNotes(folder).map { list ->
-            list.filter { note -> text.isBlank() || note.matchesQuery(text) }
-                .map { note -> note.toListItem(text) }
+    /** Notes per folder for the picker at 500+ folder scale (key null = no folder). */
+    val folderCounts: StateFlow<Map<Long?, Int>> = repository.observeFolderCounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    // 150ms debounce keeps the accumulator UI at 60fps with 500+ notes in memory.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val notes: StateFlow<List<NoteListItem>> = combine(
+        selectedFolderId,
+        query.debounce(SEARCH_DEBOUNCE_MS).distinctUntilChanged(),
+        searchAllScope,
+        sortMode,
+    ) { folder, text, allScope, sort -> QueryInput(folder, text, allScope, sort) }
+        .flatMapLatest { input ->
+            // Accent-insensitive matching cannot be delegated to SQLite LIKE, so the folder flow
+            // is filtered in memory with Normalizer.Form.NFD. It keeps `cancion` finding `canción`.
+            val scopeFolder = if (input.allScope) null else input.folder
+            repository.observeNotes(scopeFolder).map { list ->
+                sortNoteItems(
+                    list.filter { note -> input.text.isBlank() || note.matchesQuery(input.text) }
+                        .map { note -> note.toListItem(input.text) },
+                    input.sort,
+                )
+            }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Folders whose name matches the current query, for one-tap jumping. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val matchingFolders: StateFlow<List<FolderEntity>> = combine(
+        folders,
+        query.debounce(SEARCH_DEBOUNCE_MS).distinctUntilChanged(),
+    ) { all, text -> all.filter { text.isBlank() || SearchText.contains(it.name, text) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private data class QueryInput(
+        val folder: Long?,
+        val text: String,
+        val allScope: Boolean,
+        val sort: NoteSort,
+    )
 
     private val _scanState = MutableStateFlow(ScanUiState())
     val scanState: StateFlow<ScanUiState> = _scanState.asStateFlow()
@@ -153,6 +211,14 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun clearQuery() {
         clearSelection()
         query.value = ""
+    }
+
+    fun setSearchScopeAll(all: Boolean) {
+        searchAllScope.value = all
+    }
+
+    fun setSortMode(sort: NoteSort) {
+        sortMode.value = sort
     }
 
     fun selectFolder(folderId: Long?) {
@@ -221,10 +287,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
             val noteId = withContext(Dispatchers.IO) {
                 repository.createNote(
                     folderId = folderId,
-                    blocks = listOf(
-                        com.blackeye.kribo.data.blocks.TitleBlock(),
-                        com.blackeye.kribo.data.blocks.ParagraphBlock(),
-                    ),
+                    blocks = newNoteBlocks(),
                 )
             }
             onCreated(noteId)
@@ -574,6 +637,31 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * #43: builds the clean payloads (blocks + folder + OCR) for one or several selected
+     * notes so Home can combine them into a single `.txt` for the AI share sheet.
+     */
+    suspend fun buildAiPayloads(ids: Set<Long>): List<NoteExportPayload> = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext emptyList()
+        val folderNames = repository.getAllFolders().associate { it.id to it.name }
+        ids.mapNotNull { id ->
+            val note = repository.getNote(id) ?: return@mapNotNull null
+            val ocr = repository.getAttachments(id)
+                .mapNotNull { attachment ->
+                    attachment.extractedText
+                        .takeIf { it.isNotBlank() }
+                        ?.let { attachment.id to it }
+                }
+                .toMap()
+            NoteExportPayload(
+                title = note.titleText,
+                folder = note.folderId?.let(folderNames::get).orEmpty(),
+                blocks = repository.getBlocks(id),
+                ocrTexts = ocr,
+            )
+        }
+    }
+
     private suspend fun NoteEntity.toListItem(activeQuery: String): NoteListItem {
         val blocks = BlockCodec.decode(blocksJson)
         val tasks = blocks.filterIsInstance<TaskBlock>()
@@ -612,6 +700,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 }
 
 private const val SCAN_FOLDER_NAME = "Recibos"
+private const val SEARCH_DEBOUNCE_MS = 150L
 
 /**
  * Turns the first meaningful OCR line into a short, editable note title. Control characters,

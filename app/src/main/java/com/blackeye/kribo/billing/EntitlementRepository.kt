@@ -22,6 +22,8 @@ class EntitlementRepository(
     private val source: BillingSource,
     private val store: SecureKeyValueStore,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    /** Fail-open PRO for local UI work; release (false) always asks Play Billing. */
+    private val debugOverride: Boolean = BuildConfig.DEBUG,
 ) {
 
     private val _isPro = MutableStateFlow(false)
@@ -33,17 +35,29 @@ class EntitlementRepository(
     val billingState: StateFlow<BillingUiState> = source.state
 
     init {
+        // Debug builds are fully unlocked for UI work; release keeps the Play verdict authoritative.
+        if (debugOverride) {
+            _isPro.value = true
+            _resolved.value = true
+        }
         scope.launch {
-            // KeyStore decryption stays off the first frame; offline PRO appears a moment later.
-            if (runCatching { store.get(KEY_PRO_CACHE) }.getOrNull() == "1") {
-                _isPro.value = true
+            if (!debugOverride) {
+                // KeyStore decryption stays off the first frame; offline PRO appears a moment later.
+                if (runCatching { store.get(KEY_PRO_CACHE) }.getOrNull() == "1") {
+                    _isPro.value = true
+                }
             }
             source.state.collect { state ->
                 if (state.resolved) {
-                    val pro = state.owned
-                    store.put(KEY_PRO_CACHE, if (pro) "1" else "0")
-                    _isPro.value = pro
-                    _resolved.value = true
+                    if (debugOverride) {
+                        _isPro.value = true
+                        _resolved.value = true
+                    } else {
+                        val pro = state.owned
+                        store.put(KEY_PRO_CACHE, if (pro) "1" else "0")
+                        _isPro.value = pro
+                        _resolved.value = true
+                    }
                 }
             }
         }

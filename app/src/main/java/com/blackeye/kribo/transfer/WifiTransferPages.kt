@@ -283,6 +283,17 @@ pre.note-body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;f
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  // LinkBlock URLs surface as "label https://…" text here. Only http(s) becomes a
+  // clickable anchor in a new tab; javascript:/file:/content:/intent: stay inert text.
+  function linkify(rawText) {
+    var plain = esc(rawText);
+    return plain.replace(/https?:\/\/[^\s<>"']+/g, function (url) {
+      var clean = url.replace(/[.,;:!?)\]]+$/, '');
+      if (!/^https?:\/\//i.test(clean)) return url;
+      var trail = url.substring(clean.length);
+      return '<a href="' + clean + '" target="_blank" rel="noopener noreferrer">' + clean + '</a>' + esc(trail);
+    });
+  }
   function formatDate(value) {
     if (!value) return '';
     try {
@@ -367,7 +378,8 @@ pre.note-body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;f
     byId('vTitle').textContent = current.title || 'Sin título';
     byId('mdLink').href = '/api/notes/' + current.id + '/export';
     byId('vMeta').textContent = formatDate(current.updatedAt) + (current.editable ? '' : ' · Solo lectura');
-    byId('vBody').textContent = current.body || '';
+    // bodyHtml comes from the server fully escaped (only whitelisted span tags remain).
+    byId('vBody').innerHTML = current.bodyHtml || linkify(current.body || '');
     byId('vBody').hidden = !current.body;
     byId('vOcr').textContent = current.ocrText || '';
     byId('vOcrWrap').hidden = !current.ocrText;

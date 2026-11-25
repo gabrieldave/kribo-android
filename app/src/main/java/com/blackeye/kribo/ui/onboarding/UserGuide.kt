@@ -3,6 +3,7 @@ package com.blackeye.kribo.ui.onboarding
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,7 +57,7 @@ import com.blackeye.kribo.ui.components.StatusPill
 import kotlinx.coroutines.launch
 
 private data class GuidePage(
-    val icon: ImageVector,
+    val drawableRes: Int,
     val titleRes: Int,
     val bodyRes: Int,
 )
@@ -96,17 +97,13 @@ enum class GuideTopic(
         icon = Icons.Rounded.Home,
     ),
     EDITOR_BLOCKS(
-        drawableRes = R.drawable.guide_editor_blocks,
+        drawableRes = R.drawable.guide_editor_flow,
         titleRes = R.string.guide_topic_editor_title,
         introRes = R.string.guide_topic_editor_intro,
         items = listOf(
-            R.string.block_tooltip_h1,
-            R.string.block_tooltip_h2,
-            R.string.block_tooltip_paragraph,
-            R.string.block_tooltip_task,
-            R.string.block_tooltip_toggle,
-            R.string.block_tooltip_quote,
-            R.string.block_tooltip_image,
+            R.string.guide_topic_editor_item_1,
+            R.string.guide_topic_editor_item_2,
+            R.string.guide_topic_editor_item_3,
         ),
         icon = Icons.Rounded.Edit,
     ),
@@ -158,6 +155,7 @@ enum class GuideTopic(
             R.string.guide_topic_export_item_2,
             R.string.guide_topic_export_item_3,
             R.string.guide_topic_export_item_4,
+            R.string.guide_topic_export_item_5,
         ),
         icon = Icons.Rounded.PictureAsPdf,
     ),
@@ -168,21 +166,21 @@ enum class GuideTopic(
 fun UserGuideScreen(onFinish: () -> Unit) {
     val pages = listOf(
         GuidePage(
-            Icons.AutoMirrored.Rounded.Notes,
+            R.drawable.onboarding_offline_notes,
             R.string.guide_page_1_title,
             R.string.guide_page_1_body,
         ),
         GuidePage(
-            Icons.Rounded.DocumentScanner,
+            R.drawable.onboarding_ocr_scan,
             R.string.guide_page_2_title,
             R.string.guide_page_2_body,
         ),
         GuidePage(
-            Icons.Rounded.PictureAsPdf,
+            R.drawable.onboarding_export_free,
             R.string.guide_page_3_title,
             R.string.guide_page_3_body,
         ),
-        GuidePage(Icons.Rounded.Star, R.string.guide_page_4_title, R.string.guide_page_4_body),
+        GuidePage(R.drawable.onboarding_pro_lifetime, R.string.guide_page_4_title, R.string.guide_page_4_body),
     )
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
@@ -270,20 +268,16 @@ fun UserGuideScreen(onFinish: () -> Unit) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Surface(
-                    modifier = Modifier.size(84.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = page.icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp),
-                        )
-                    }
-                }
+                Image(
+                    painter = painterResource(page.drawableRes),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Crop,
+                )
                 Spacer(Modifier.height(24.dp))
                 Text(
                     text = stringResource(page.titleRes),

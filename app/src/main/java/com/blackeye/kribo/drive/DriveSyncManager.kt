@@ -304,6 +304,7 @@ class DriveSyncManager(
             blocks = existingBlocks,
             updatedAt = remote.updatedAt,
             remoteOcrText = remote.ocrText,
+            fontStyle = remote.fontStyle,
         )
 
         val existingAttachments = repository.getAttachments(remote.id)
@@ -356,6 +357,7 @@ class DriveSyncManager(
                 blocks = mapped,
                 updatedAt = remote.updatedAt,
                 remoteOcrText = remote.ocrText,
+                fontStyle = remote.fontStyle,
             )
         }
         tombstones.clear(remote.id)
@@ -420,6 +422,7 @@ class DriveSyncManager(
             blocks = json.parseToJsonElement(note.blocksJson),
             plainText = note.plainTextIndex,
             ocrText = note.ocrTextIndex,
+            fontStyle = note.fontStyle,
             attachments = refs,
         )
         val name = "note-${note.id}.json"

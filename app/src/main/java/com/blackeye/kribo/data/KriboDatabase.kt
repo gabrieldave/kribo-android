@@ -8,7 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [FolderEntity::class, NoteEntity::class, AttachmentEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class KriboDatabase : RoomDatabase() {
@@ -21,7 +21,7 @@ abstract class KriboDatabase : RoomDatabase() {
 
         fun create(context: Context): KriboDatabase =
             Room.databaseBuilder(context.applicationContext, KriboDatabase::class.java, DATABASE_NAME)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(SeedFoldersCallback)
                 .build()
 

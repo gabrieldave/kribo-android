@@ -58,7 +58,7 @@ class Migration1To2Test {
             KriboDatabase::class.java,
             databaseFile.absolutePath,
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
 
@@ -90,12 +90,12 @@ class Migration1To2Test {
             KriboDatabase::class.java,
             databaseFile.absolutePath,
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
 
         val db = database!!
-        assertEquals(2, db.openHelper.readableDatabase.version)
+        assertEquals(3, db.openHelper.readableDatabase.version)
 
         val noteId = db.noteDao().insert(
             NoteEntity(

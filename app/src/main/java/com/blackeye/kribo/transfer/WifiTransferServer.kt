@@ -3,6 +3,7 @@ package com.blackeye.kribo.transfer
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import androidx.compose.ui.graphics.toArgb
 import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.NoteRepository
 import com.blackeye.kribo.data.blocks.AttachmentBlock
@@ -231,6 +232,7 @@ class WifiTransferServer(
                                 id = note.id,
                                 title = note.displayTitle(),
                                 body = note.bodyWithoutTitle(),
+                                bodyHtml = note.bodyHtml(),
                                 ocrText = note.ocrTextIndex,
                                 updatedAt = note.updatedAt,
                                 editable = blocks.all {
@@ -433,6 +435,85 @@ class WifiTransferServer(
         return lines.drop(start).joinToString("\n").trim()
     }
 
+    /**
+     * Safe HTML body (#42): every chunk is escaped, then only whitelisted tags
+     * (`strong/em/u/s` and inline `color` from the [AccentTone] palette) are emitted.
+     * No raw user HTML or URLs ever pass through.
+     */
+    private fun NoteEntity.bodyHtml(): String {
+        val blocks = BlockCodec.decode(blocksJson)
+        val out = StringBuilder()
+        blocks.forEach { block ->
+            val (rawText, spans) = when (block) {
+                is com.blackeye.kribo.data.blocks.TitleBlock -> block.text to block.spans
+                is com.blackeye.kribo.data.blocks.ParagraphBlock -> block.text to block.spans
+                is com.blackeye.kribo.data.blocks.TaskBlock -> block.text to block.spans
+                is com.blackeye.kribo.data.blocks.QuoteBlock -> block.text to block.spans
+                is com.blackeye.kribo.data.blocks.ToggleBlock -> block.content to block.contentSpans
+                is com.blackeye.kribo.data.blocks.LinkBlock -> {
+                    val url = com.blackeye.kribo.data.blocks.UrlSafety.normalizeUrl(block.url)
+                    if (url == null) return@forEach
+                    val label = block.label.ifBlank { url }
+                    out.append("<p><a href=\"").append(escHtml(url))
+                        .append("\" target=\"_blank\" rel=\"noopener noreferrer\">")
+                        .append(escHtml(label))
+                        .append("</a></p>")
+                    return@forEach
+                }
+                else -> return@forEach
+            }
+            if (rawText.isBlank()) return@forEach
+            out.append("<p>").append(renderSpansHtml(rawText, spans)).append("</p>")
+        }
+        return out.toString()
+    }
+
+    private fun escHtml(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
+
+    private fun renderSpansHtml(text: String, spans: List<com.blackeye.kribo.data.blocks.InlineSpan>): String {
+        if (spans.isEmpty()) return escHtml(text).replace("\n", "<br>")
+        val ordered = spans.sortedWith(compareBy({ it.start }, { -(it.end - it.start) }))
+        val out = StringBuilder()
+        var cursor = 0
+        ordered.forEach { span ->
+            val start = span.start.coerceIn(0, text.length)
+            val end = span.end.coerceIn(start, text.length)
+            if (start >= end || start < cursor) return@forEach
+            out.append(escHtml(text.substring(cursor, start)).replace("\n", "<br>"))
+            val chunk = escHtml(text.substring(start, end)).replace("\n", "<br>")
+            out.append(
+                when (span.type) {
+                    com.blackeye.kribo.data.blocks.SpanType.BOLD -> "<strong>$chunk</strong>"
+                    com.blackeye.kribo.data.blocks.SpanType.ITALIC -> "<em>$chunk</em>"
+                    com.blackeye.kribo.data.blocks.SpanType.UNDERLINE -> "<u>$chunk</u>"
+                    com.blackeye.kribo.data.blocks.SpanType.STRIKETHROUGH -> "<s>$chunk</s>"
+                    com.blackeye.kribo.data.blocks.SpanType.TEXT_COLOR -> {
+                        val hex = span.tone?.let {
+                            "#%06X".format(com.blackeye.kribo.ui.theme.InlineColors.pdfColor(it).toArgb() and 0xFFFFFF)
+                        }
+                        if (hex == null) chunk else "<span style=\"color:$hex\">$chunk</span>"
+                    }
+                    com.blackeye.kribo.data.blocks.SpanType.HIGHLIGHT -> {
+                        val hex = span.tone?.let {
+                            "#%06X".format(com.blackeye.kribo.ui.theme.InlineColors.pdfColor(it).toArgb() and 0xFFFFFF)
+                        }
+                        if (hex == null) chunk else {
+                            "<mark style=\"background:$hex;opacity:.25\">$chunk</mark>"
+                        }
+                    }
+                },
+            )
+            cursor = end
+        }
+        out.append(escHtml(text.substring(cursor)).replace("\n", "<br>"))
+        return out.toString()
+    }
+
     /** Card preview based on real body copy, never the title twice. */
     private fun NoteEntity.previewText(): String {
         val cleanTitle = displayTitle().trim()
@@ -607,6 +688,7 @@ class WifiTransferServer(
         val id: Long,
         val title: String,
         val body: String,
+        val bodyHtml: String = "",
         val ocrText: String,
         val updatedAt: Long,
         val editable: Boolean,

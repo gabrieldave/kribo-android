@@ -14,12 +14,16 @@ import com.blackeye.kribo.data.NoteRepository
 import com.blackeye.kribo.data.titleText
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
+import com.blackeye.kribo.data.blocks.InlineSpan
+import com.blackeye.kribo.data.blocks.LinkBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
+import com.blackeye.kribo.data.blocks.SpanType
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.data.blocks.ToggleBlock
+import androidx.compose.ui.graphics.toArgb
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
@@ -30,6 +34,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Free export: clean Markdown, clean PDF and a full ZIP backup of standard .md files. */
+/**
+ * Plain text with markdown emphasis (#42): bold `**`, italic `*`, strikethrough `~~`,
+ * underline `<u>`. Colors have no markdown and pass through untouched.
+ */
+internal fun renderMarkdownSpans(text: String, spans: List<InlineSpan>): String {
+    if (spans.isEmpty() || text.isEmpty()) return text
+    val ordered = spans.sortedWith(compareBy({ it.start }, { -(it.end - it.start) }))
+    val out = StringBuilder()
+    var cursor = 0
+    ordered.forEach { span ->
+        val start = span.start.coerceIn(0, text.length)
+        val end = span.end.coerceIn(start, text.length)
+        if (start >= end) return@forEach
+        if (start < cursor) return@forEach
+        out.append(text, cursor, start)
+        val chunk = text.substring(start, end)
+        out.append(
+            when (span.type) {
+                SpanType.BOLD -> "**$chunk**"
+                SpanType.ITALIC -> "*$chunk*"
+                SpanType.UNDERLINE -> "<u>$chunk</u>"
+                SpanType.STRIKETHROUGH -> "~~$chunk~~"
+                SpanType.TEXT_COLOR, SpanType.HIGHLIGHT -> chunk
+            },
+        )
+        cursor = end
+    }
+    out.append(text, cursor, text.length)
+    return out.toString()
+}
+
 class ExportService(
     private val repository: NoteRepository,
 ) {
@@ -55,12 +90,12 @@ class ExportService(
                 }
 
                 is ParagraphBlock -> if (block.text.isNotBlank()) {
-                    builder.append(block.text).append("\n\n")
+                    builder.append(renderMarkdownSpans(block.text, block.spans)).append("\n\n")
                 }
 
                 is TaskBlock -> {
                     builder.append(if (block.checked) "- [x] " else "- [ ] ")
-                        .append(block.text)
+                        .append(renderMarkdownSpans(block.text, block.spans))
                         .append('\n')
                 }
 
@@ -70,10 +105,19 @@ class ExportService(
                 }
 
                 is QuoteBlock -> {
-                    block.text.lineSequence().forEach { line ->
+                    renderMarkdownSpans(block.text, block.spans).lineSequence().forEach { line ->
                         builder.append("> ").append(line).append('\n')
                     }
                     builder.append('\n')
+                }
+
+                is LinkBlock -> {
+                    val url = block.url.trim()
+                    if (url.isNotBlank()) {
+                        val label = block.label.trim().ifBlank { url }
+                        builder.append('[').append(label).append(']').append('(')
+                            .append(url).append(")\n\n")
+                    }
                 }
 
                 is AttachmentBlock -> {
@@ -114,19 +158,25 @@ class ExportService(
         outputFile.parentFile?.mkdirs()
 
         val document = PdfDocument()
+        val fontTypeface = when (com.blackeye.kribo.data.NoteFont.fromName(note.fontStyle)) {
+            com.blackeye.kribo.data.NoteFont.SANS -> Typeface.DEFAULT
+            com.blackeye.kribo.data.NoteFont.SERIF -> Typeface.SERIF
+            com.blackeye.kribo.data.NoteFont.MONO -> Typeface.MONOSPACE
+        }
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(17, 17, 17)
             textSize = 18f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(fontTypeface, Typeface.BOLD)
         }
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(34, 34, 34)
             textSize = 11f
+            typeface = fontTypeface
         }
         val quotePaint = Paint(bodyPaint).apply {
             color = Color.rgb(90, 90, 90)
             textSize = 10.5f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+            typeface = Typeface.create(fontTypeface, Typeface.ITALIC)
         }
         val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
@@ -158,7 +208,69 @@ class ExportService(
             }
         }
 
-        fun drawParagraph(text: String, paint: Paint, indent: Float = 0f) {
+        fun drawSpanned(text: String, spans: List<InlineSpan>, paint: Paint, indent: Float = 0f) {
+            val spannable = android.text.SpannableString(text)
+            spans.forEach { span ->
+                val start = span.start.coerceIn(0, text.length)
+                val end = span.end.coerceIn(start, text.length)
+                if (start >= end) return@forEach
+                when (span.type) {
+                    SpanType.BOLD -> spannable.setSpan(
+                        android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                        start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    SpanType.ITALIC -> spannable.setSpan(
+                        android.text.style.StyleSpan(android.graphics.Typeface.ITALIC),
+                        start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    SpanType.UNDERLINE -> spannable.setSpan(
+                        android.text.style.UnderlineSpan(),
+                        start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    SpanType.STRIKETHROUGH -> spannable.setSpan(
+                        android.text.style.StrikethroughSpan(),
+                        start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    SpanType.TEXT_COLOR -> span.tone?.let { tone ->
+                        spannable.setSpan(
+                            android.text.style.ForegroundColorSpan(
+                                com.blackeye.kribo.ui.theme.InlineColors.pdfColor(tone).toArgb(),
+                            ),
+                            start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        )
+                    }
+                    SpanType.HIGHLIGHT -> span.tone?.let { tone ->
+                        spannable.setSpan(
+                            android.text.style.BackgroundColorSpan(
+                                com.blackeye.kribo.ui.theme.InlineColors.pdfColor(tone).toArgb().let {
+                                    android.graphics.Color.argb(77, android.graphics.Color.red(it), android.graphics.Color.green(it), android.graphics.Color.blue(it))
+                                },
+                            ),
+                            start, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        )
+                    }
+                }
+            }
+            val width = (contentWidth - indent).toInt()
+            val layout = android.text.StaticLayout.Builder.obtain(
+                spannable, 0, text.length, android.text.TextPaint(paint), width,
+            ).setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 1.1f)
+                .setIncludePad(false)
+                .build()
+            ensureSpace(layout.height.toFloat() + 6f)
+            canvas?.save()
+            canvas?.translate(margin + indent, y)
+            layout.draw(canvas)
+            canvas?.restore()
+            y += layout.height + 6f
+        }
+
+        fun drawParagraph(text: String, paint: Paint, indent: Float = 0f, spans: List<InlineSpan> = emptyList()) {
+            if (spans.isNotEmpty() && text.isNotBlank()) {
+                drawSpanned(text, spans, paint, indent)
+                return
+            }
             val width = contentWidth - indent
             wrapText(text, paint, width).forEach { line ->
                 ensureSpace(paint.textSize + 4f)
@@ -178,22 +290,35 @@ class ExportService(
         blocks.forEach { block ->
             when (block) {
                 is TitleBlock -> if (block.text.trim() != note.title.trim()) {
-                    drawParagraph(block.text, titlePaint)
+                    drawParagraph(block.text, titlePaint, spans = block.spans)
                 }
 
-                is ParagraphBlock -> drawParagraph(block.text, bodyPaint)
+                is ParagraphBlock -> drawParagraph(block.text, bodyPaint, spans = block.spans)
 
-                is TaskBlock -> drawParagraph(
-                    (if (block.checked) "[x] " else "[ ] ") + block.text,
-                    bodyPaint,
-                )
+                is TaskBlock -> {
+                    // Prefix shifts the plain-text span coordinates for the drawn string.
+                    val drawn = (if (block.checked) "[x] " else "[ ] ") + block.text
+                    drawParagraph(drawn, bodyPaint, spans = block.spans.map {
+                        it.copy(start = it.start + 4, end = it.end + 4)
+                    })
+                }
 
                 is ToggleBlock -> {
-                    drawParagraph(block.title, titlePaint)
-                    if (block.content.isNotBlank()) drawParagraph(block.content, bodyPaint, indent = 12f)
+                    drawParagraph(block.title, titlePaint, spans = block.titleSpans)
+                    if (block.content.isNotBlank()) {
+                        drawParagraph(block.content, bodyPaint, indent = 12f, spans = block.contentSpans)
+                    }
                 }
 
-                is QuoteBlock -> drawParagraph(block.text, quotePaint, indent = 16f)
+                is QuoteBlock -> drawParagraph(block.text, quotePaint, indent = 16f, spans = block.spans)
+
+                is LinkBlock -> {
+                    val label = block.label.trim().ifBlank { block.url.trim() }
+                    if (label.isNotBlank()) drawParagraph(label, titlePaint, indent = 12f)
+                    if (block.url.isNotBlank() && block.url.trim() != label) {
+                        drawParagraph("↗ ${block.url.trim()}", bodyPaint, indent = 24f)
+                    }
+                }
 
                 is AttachmentBlock -> {
                     val attachment = attachments.firstOrNull { it.id == block.attachmentId }

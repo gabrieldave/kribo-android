@@ -4,6 +4,7 @@ import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.NoteBlock
 import java.io.File
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 class NoteRepository(
     private val database: KriboDatabase,
@@ -18,6 +19,10 @@ class NoteRepository(
 
     fun observeNotes(folderId: Long?): Flow<List<NoteEntity>> =
         if (folderId == null) noteDao.observeAll() else noteDao.observeByFolder(folderId)
+
+    /** Key per folder (null = no folder); only folders with notes appear. */
+    fun observeFolderCounts(): Flow<Map<Long?, Int>> =
+        noteDao.observeFolderCounts().map { rows -> rows.associate { it.folderId to it.count } }
 
     fun searchNotes(query: String): Flow<List<NoteEntity>> = noteDao.search(query.trim())
 
@@ -57,20 +62,39 @@ class NoteRepository(
         val existing = noteDao.getById(noteId) ?: return
         val plainText = BlockCodec.plainText(blocks)
         val derivedTitle = BlockCodec.derivedTitle(blocks)
-        val hasExplicitTitle = blocks.any { it is com.blackeye.kribo.data.blocks.TitleBlock && it.text.isNotBlank() }
         val ocrText = attachmentDao.getForNote(noteId)
             .mapNotNull { it.extractedText.takeIf(String::isNotBlank) }
             .joinToString(separator = "\n")
         noteDao.update(
             existing.copy(
-                title = if (hasExplicitTitle) {
-                    derivedTitle
-                } else {
-                    existing.title.ifBlank { derivedTitle }
-                },
+                // The title field (#38) is the source of truth; derived title is only a fallback
+                // so Home/export keep working when the field is left blank.
+                title = existing.title.ifBlank { derivedTitle },
                 blocksJson = BlockCodec.encode(blocks),
                 plainTextIndex = plainText,
                 ocrTextIndex = ocrText,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    /** Persists the editable note title shown by the fixed title field in the editor. */
+    suspend fun setNoteTitle(noteId: Long, title: String) {
+        val existing = noteDao.getById(noteId) ?: return
+        noteDao.update(
+            existing.copy(
+                title = title.take(120),
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    /** Changes the per-note editorial font (#42); older notes keep SANS through the default. */
+    suspend fun setNoteFont(noteId: Long, fontStyle: String) {
+        val existing = noteDao.getById(noteId) ?: return
+        noteDao.update(
+            existing.copy(
+                fontStyle = fontStyle,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
@@ -103,6 +127,7 @@ class NoteRepository(
         blocks: List<NoteBlock>,
         updatedAt: Long,
         remoteOcrText: String = "",
+        fontStyle: String = "SANS",
     ) {
         val existing = noteDao.getById(noteId)
         val attachmentText = attachmentDao.getForNote(noteId)
@@ -120,6 +145,7 @@ class NoteRepository(
                 isPinned = existing?.isPinned ?: false,
                 createdAt = existing?.createdAt ?: updatedAt,
                 updatedAt = updatedAt,
+                fontStyle = fontStyle.takeIf { it.isNotBlank() } ?: "SANS",
             ),
         )
     }
