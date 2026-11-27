@@ -50,9 +50,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -81,6 +83,8 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FormatClear
+import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Home
@@ -194,6 +198,7 @@ import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.LinkBlock
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.ActiveStyles
@@ -203,6 +208,7 @@ import com.blackeye.kribo.data.blocks.UrlSafety
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.data.blocks.ToggleBlock
+import com.blackeye.kribo.data.blocks.orderedListIndex
 import com.blackeye.kribo.domain.editor.BlockReorder
 import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.components.AppModal
@@ -213,6 +219,8 @@ import com.blackeye.kribo.ui.components.hideKeyboardOnScroll
 import com.blackeye.kribo.ui.components.isImeVisible
 import com.blackeye.kribo.ui.components.rememberKeyboardScrollGuard
 import com.blackeye.kribo.data.export.NoteExportPayload
+import com.blackeye.kribo.data.export.buildCopyNoteText
+import com.blackeye.kribo.data.export.copyTextToClipboard
 import com.blackeye.kribo.ui.share.AiShareSheet
 import com.blackeye.kribo.ui.theme.InlineColors
 import java.io.File
@@ -300,6 +308,9 @@ fun NoteEditorScreen(
     val haptic = LocalHapticFeedback.current
     val deletedMessage = stringResource(R.string.note_deleted_snackbar)
     val undoLabel = stringResource(R.string.action_undo)
+    val copyLabel = stringResource(R.string.app_name)
+    val copiedNoteMessage = stringResource(R.string.note_copied_snackbar)
+    val emptyCopyMessage = stringResource(R.string.note_copy_empty_snackbar)
     val manualPhotoCount = blocks.count { it is AttachmentBlock && it.manual }
     val requestImage: (Uri) -> Unit = { uri ->
         if (ProLimits.canAttachManualPhoto(manualPhotoCount, isPro)) {
@@ -551,6 +562,41 @@ fun NoteEditorScreen(
                         },
                     )
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.note_copy_content)) },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = null)
+                        },
+                        modifier = Modifier.testTag("editor-copy-content"),
+                        onClick = {
+                            menuExpanded = false
+                            val text = buildCopyNoteText(
+                                NoteExportPayload(
+                                    title = viewModel.noteTitle,
+                                    folder = folderLabel,
+                                    blocks = blocks,
+                                    ocrTexts = viewModel.attachments
+                                        .filter { it.extractedText.isNotBlank() }
+                                        .associate { it.id to it.extractedText },
+                                ),
+                            )
+                            scope.launch {
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                if (text.isBlank()) {
+                                    snackbarHostState.showSnackbar(
+                                        message = emptyCopyMessage,
+                                        duration = SnackbarDuration.Short,
+                                    )
+                                } else {
+                                    copyTextToClipboard(context, copyLabel, text)
+                                    snackbarHostState.showSnackbar(
+                                        message = copiedNoteMessage,
+                                        duration = SnackbarDuration.Short,
+                                    )
+                                }
+                            }
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.export_title)) },
                         leadingIcon = {
                             Icon(Icons.Rounded.Share, contentDescription = null)
@@ -727,9 +773,10 @@ fun NoteEditorScreen(
                         }
                     }
                 }
-                items(items = bodyBlocks, key = { it.id }) { block ->
+                itemsIndexed(items = bodyBlocks, key = { _, it -> it.id }) { index, block ->
                     BlockRow(
                         block = block,
+                        orderedIndex = orderedListIndex(bodyBlocks, index),
                         focused = viewModel.focusedBlockId == block.id,
                         focusRequest = viewModel.focusRequestId == block.id,
                         flash = viewModel.createdBlockId == block.id,
@@ -775,6 +822,14 @@ fun NoteEditorScreen(
                         onEnterNextTask = {
                             keyboardGuard.onBlockCreated()
                             viewModel.exitTaskBelow(block.id)
+                        },
+                        onEnterNextList = {
+                            keyboardGuard.onBlockCreated()
+                            viewModel.exitListBelow(block.id)
+                        },
+                        onListNewline = { value ->
+                            keyboardGuard.onBlockCreated()
+                            viewModel.handleListNewline(block.id, value)
                         },
                         onSaveAndHome = if (block is AttachmentBlock && block.pageNumber > 0) {
                             exit
@@ -1119,9 +1174,9 @@ internal fun EditorToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BoxWithConstraints(modifier = Modifier.weight(1f)) {
-            // The eight block actions stay fully visible on phones >= 340dp. Scroll only on
-            // very narrow lanes or large-font accessibility modes, with a right-edge fade.
-            val scrollable = maxWidth < TOOLBAR_SCROLL_MIN_LANE_WIDTH ||
+            // 11 actions (Aa + 10 block types): smooth horizontal scroll at 44.dp per cell with
+            // a right-edge fade on phones, or evenly distributed when the lane fits all 11 cells.
+            val scrollable = maxWidth < TOOLBAR_BLOCK_SCROLL_MIN_LANE_WIDTH ||
                 LocalDensity.current.fontScale >= TOOLBAR_LARGE_FONT_SCALE
             if (scrollable) {
                 Row(
@@ -1140,6 +1195,7 @@ internal fun EditorToolbar(
                         formatMode = formatMode,
                         onToggleFormatMode = onToggleFormatMode,
                     )
+                    Spacer(Modifier.width(TOOLBAR_EDGE_FADE_WIDTH))
                 }
                 Box(
                     modifier = Modifier
@@ -1271,6 +1327,21 @@ private fun RowScope.ToolbarActions(
         active = activeBlock is ParagraphBlock,
         modifier = cell(),
     ) { onAdd(ParagraphBlock()) }
+    ToolbarButton(
+        icon = Icons.Rounded.FormatListNumbered,
+        descriptionRes = R.string.cd_block_ordered_list,
+        tooltipRes = R.string.block_tooltip_ordered_list,
+        active = activeBlock is ListBlock && activeBlock.ordered,
+        modifier = cell("toolbar-olist"),
+    ) { onAdd(ListBlock(ordered = true)) }
+    @Suppress("DEPRECATION")
+    ToolbarButton(
+        icon = Icons.Rounded.FormatListBulleted,
+        descriptionRes = R.string.cd_block_bullet_list,
+        tooltipRes = R.string.block_tooltip_bullet_list,
+        active = activeBlock is ListBlock && !activeBlock.ordered,
+        modifier = cell("toolbar-ulist"),
+    ) { onAdd(ListBlock(ordered = false)) }
     ToolbarButton(
         icon = Icons.Rounded.CheckBox,
         descriptionRes = R.string.cd_block_task,
@@ -1797,6 +1868,7 @@ private fun ToolbarButton(
 @Composable
 private fun BlockRow(
     block: NoteBlock,
+    orderedIndex: Int,
     focused: Boolean,
     focusRequest: Boolean,
     flash: Boolean,
@@ -1818,6 +1890,8 @@ private fun BlockRow(
     onOpenImage: (String, String) -> Unit,
     onSaveAttachmentText: (AttachmentBlock, String) -> Unit,
     onEnterNextTask: () -> Unit,
+    onEnterNextList: () -> Unit,
+    onListNewline: (String) -> Unit,
     onSaveAndHome: (() -> Unit)?,
 ) {
     // Soft confirmation pulse: the new block briefly tints with the accent colour.
@@ -1909,6 +1983,55 @@ private fun BlockRow(
                         modifier = Modifier.padding(vertical = 6.dp),
                         )
                         UrlChipsRow(text = block.text)
+                    }
+
+                    is ListBlock -> Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(
+                            text = if (block.ordered) "$orderedIndex." else "•",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = fontFamily ?: MaterialTheme.typography.bodyLarge.fontFamily,
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier
+                                .widthIn(min = 28.dp)
+                                .padding(top = 6.dp, end = 10.dp),
+                        )
+                        BlockTextField(
+                            value = block.text,
+                            onValueChange = onTextChange,
+                            interceptNewline = onListNewline,
+                            textStyle = MaterialTheme.typography.bodyLarge,
+                            placeholder = stringResource(
+                                if (block.ordered) R.string.block_ordered_list_placeholder
+                                else R.string.block_bullet_list_placeholder,
+                            ),
+                            onFocus = onFocus,
+                            requestFocus = focusRequest,
+                            onFocusRequestHandled = onFocusRequestHandled,
+                            onSelectionChange = { start, end ->
+                                onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.MAIN)
+                            },
+                            onSubmit = onEnterNextList,
+                            singleLine = false,
+                            spans = block.spans,
+                            fontFamily = fontFamily,
+                            darkTheme = darkTheme,
+                            highlightQuery = highlightQuery,
+                            highlightStyle = highlightStyle,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 6.dp),
+                        )
                     }
 
                     is TaskBlock -> Row(
@@ -2245,6 +2368,7 @@ private fun BlockTextField(
     onFocusRequestHandled: () -> Unit = {},
     onSelectionChange: (Int, Int) -> Unit = { _, _ -> Unit },
     onSubmit: (() -> Unit)? = null,
+    interceptNewline: ((String) -> Unit)? = null,
     singleLine: Boolean = onSubmit != null,
     spans: List<InlineSpan> = emptyList(),
     fontFamily: FontFamily? = null,
@@ -2306,8 +2430,12 @@ private fun BlockTextField(
     BasicTextField(
         value = fieldValue,
         onValueChange = { updated ->
-            fieldValue = updated
-            onValueChange(updated.text)
+            if (interceptNewline != null && updated.text.contains('\n')) {
+                interceptNewline(updated.text)
+            } else {
+                fieldValue = updated
+                onValueChange(updated.text)
+            }
         },
         modifier = modifier
             .fillMaxWidth()
@@ -3034,6 +3162,9 @@ private fun reorderTypeLabel(block: NoteBlock): String = when (block) {
         if (block.level <= 1) R.string.reorder_type_h1 else R.string.reorder_type_h2,
     )
     is ParagraphBlock -> stringResource(R.string.reorder_type_text)
+    is ListBlock -> stringResource(
+        if (block.ordered) R.string.reorder_type_olist else R.string.reorder_type_ulist,
+    )
     is TaskBlock -> stringResource(R.string.reorder_type_task)
     is ToggleBlock -> stringResource(R.string.reorder_type_toggle)
     is QuoteBlock -> stringResource(R.string.reorder_type_quote)
@@ -3047,6 +3178,7 @@ private fun reorderPreview(block: NoteBlock): String {
     val raw = when (block) {
         is TitleBlock -> block.text
         is ParagraphBlock -> block.text
+        is ListBlock -> block.text
         is TaskBlock -> block.text
         is QuoteBlock -> block.text
         is ToggleBlock -> listOf(block.title, block.content)
@@ -3726,10 +3858,13 @@ private const val DELETE_UNDO_WINDOW_MS = 6_000L
 /** Frames a freshly created block may spend waiting for LazyColumn to place it. */
 private const val FOCUS_ATTEMPTS = 4
 
-/** Seven block actions in the editor footer. */
-private const val BLOCK_ACTION_COUNT = 8
+/** Ten block actions in the editor footer (plus Aa = 11 total). */
+private const val BLOCK_ACTION_COUNT = 10
 
-/** Below this lane width the actions switch to a scrollable strip. */
+/** Below this lane width (11 × 44.dp) the block toolbar uses a smooth horizontal scroll strip. */
+private val TOOLBAR_BLOCK_SCROLL_MIN_LANE_WIDTH = 484.dp
+
+/** Below this lane width the 9-action format bar switches to a scrollable strip. */
 private val TOOLBAR_SCROLL_MIN_LANE_WIDTH = 288.dp
 
 /** At this font scale H1/H2 must not shrink past legibility, so the strip scrolls. */

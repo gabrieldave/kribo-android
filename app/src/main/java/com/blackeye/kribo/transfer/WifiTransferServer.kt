@@ -443,26 +443,38 @@ class WifiTransferServer(
     private fun NoteEntity.bodyHtml(): String {
         val blocks = BlockCodec.decode(blocksJson)
         val out = StringBuilder()
-        blocks.forEach { block ->
+        blocks.forEachIndexed { index, block ->
             val (rawText, spans) = when (block) {
                 is com.blackeye.kribo.data.blocks.TitleBlock -> block.text to block.spans
                 is com.blackeye.kribo.data.blocks.ParagraphBlock -> block.text to block.spans
+                is com.blackeye.kribo.data.blocks.ListBlock -> {
+                    if (block.text.isBlank()) return@forEachIndexed
+                    val prefix = if (block.ordered) {
+                        "${com.blackeye.kribo.data.blocks.orderedListIndex(blocks, index)}. "
+                    } else {
+                        "• "
+                    }
+                    out.append("<p>").append(escHtml(prefix))
+                        .append(renderSpansHtml(block.text, block.spans))
+                        .append("</p>")
+                    return@forEachIndexed
+                }
                 is com.blackeye.kribo.data.blocks.TaskBlock -> block.text to block.spans
                 is com.blackeye.kribo.data.blocks.QuoteBlock -> block.text to block.spans
                 is com.blackeye.kribo.data.blocks.ToggleBlock -> block.content to block.contentSpans
                 is com.blackeye.kribo.data.blocks.LinkBlock -> {
                     val url = com.blackeye.kribo.data.blocks.UrlSafety.normalizeUrl(block.url)
-                    if (url == null) return@forEach
+                    if (url == null) return@forEachIndexed
                     val label = block.label.ifBlank { url }
                     out.append("<p><a href=\"").append(escHtml(url))
                         .append("\" target=\"_blank\" rel=\"noopener noreferrer\">")
                         .append(escHtml(label))
                         .append("</a></p>")
-                    return@forEach
+                    return@forEachIndexed
                 }
-                else -> return@forEach
+                else -> return@forEachIndexed
             }
-            if (rawText.isBlank()) return@forEach
+            if (rawText.isBlank()) return@forEachIndexed
             out.append("<p>").append(renderSpansHtml(rawText, spans)).append("</p>")
         }
         return out.toString()

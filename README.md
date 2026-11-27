@@ -2,12 +2,12 @@
 
 Notas rápidas, escaneo OCR local y búsqueda. Privado por diseño, sin cuentas y sin rastreo.
 
-Home ofrece lista compacta o cuadrícula Bento, cuatro temas (Obsidiana, Papel Cálido, AMOLED Negro y Claro Puro), captura rápida inferior y escaneo OCR en un toque.
+Home ofrece lista compacta o cuadrícula Bento, 9 temas oficiales (Obsidiana, Papel Cálido, AMOLED Negro, Claro Puro, Verde, Océano, Violeta, Rosa y Ámbar), captura rápida inferior, selección múltiple con copiado de contenido y escaneo OCR en un toque.
 
 - **Paquete:** `com.blackeye.kribo`
-- **Stack:** Kotlin · Jetpack Compose · Material 3 · Room v2 · SplashScreen API · ML Kit Document Scanner + ONNX Runtime PP-OCRv5
+- **Stack:** Kotlin · Jetpack Compose · Material 3 · Room v3 · SplashScreen API · ML Kit Document Scanner + ONNX Runtime PP-OCRv5
 - **SDK:** compileSdk 36 · targetSdk 36 · minSdk 26
-- **Versión:** 1.0.2 (versionCode 3)
+- **Versión:** 1.0.17 (versionCode 18)
 - **Billing:** Google Play Billing `billing-ktx` 8.3.0
 
 ## Requisitos
@@ -54,7 +54,7 @@ Ningún `.jks`, contraseña o `local.properties` se versiona.
 ```
 app/src/main/java/com/blackeye/kribo/
 ├── billing/        BillingManager (formattedPrice, acknowledge en onResume)
-├── data/           Room v2: Folder, Note, Attachment, bloque JSON, migración 1→2
+├── data/           Room v3: Folder, Note, Attachment, bloques JSON (incl. listas), migraciones 1→2 y 2→3
 ├── importexport/   ENEX / Markdown / ZIP import, Markdown / PDF / backup export
 ├── ocr/            PP-OCRv5 lazy (ONNX), cuota cifrada, AttachmentStore
 ├── security/       AppSignatureVerifier (release-only) + SecurePrefsStore

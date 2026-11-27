@@ -21,6 +21,7 @@ import com.blackeye.kribo.data.blocks.ToggleBlock
 import com.blackeye.kribo.data.previewText
 import com.blackeye.kribo.data.titleText
 import com.blackeye.kribo.data.export.NoteExportPayload
+import com.blackeye.kribo.data.export.buildCopyNotesText
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ocr.OcrQuotaStore
 import com.blackeye.kribo.ui.billing.PaywallReason
@@ -57,6 +58,16 @@ data class NoteListItem(
 
 /** Home ordering (#41): pinned notes always stay on top, then the chosen key. */
 enum class NoteSort { RECENT, TITLE_ASC, OLDEST }
+
+/**
+ * Resolves which folder to observe on Home: selecting a folder always filters to that folder
+ * when the search box is empty; "All notes" scope only overrides it while searching.
+ */
+fun resolveScopeFolder(
+    folderId: Long?,
+    query: String,
+    searchAllScope: Boolean,
+): Long? = if (query.isNotBlank() && searchAllScope) null else folderId
 
 /** Pinned first, then by [sort]; the list in memory stays keyed by id for stable diffs. */
 fun sortNoteItems(items: List<NoteListItem>, sort: NoteSort): List<NoteListItem> =
@@ -145,7 +156,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         .flatMapLatest { input ->
             // Accent-insensitive matching cannot be delegated to SQLite LIKE, so the folder flow
             // is filtered in memory with Normalizer.Form.NFD. It keeps `cancion` finding `canción`.
-            val scopeFolder = if (input.allScope) null else input.folder
+            val scopeFolder = resolveScopeFolder(input.folder, input.text, input.allScope)
             repository.observeNotes(scopeFolder).map { list ->
                 sortNoteItems(
                     list.filter { note -> input.text.isBlank() || note.matchesQuery(input.text) }
@@ -660,6 +671,28 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                 ocrTexts = ocr,
             )
         }
+    }
+
+    /** Builds clean plain text for one or more selected notes (including OCR) for clipboard copy. */
+    suspend fun buildCopyText(ids: List<Long>): String = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext ""
+        val payloads = ids.mapNotNull { id ->
+            val note = repository.getNote(id) ?: return@mapNotNull null
+            val ocr = repository.getAttachments(id)
+                .mapNotNull { attachment ->
+                    attachment.extractedText
+                        .takeIf { it.isNotBlank() }
+                        ?.let { attachment.id to it }
+                }
+                .toMap()
+            NoteExportPayload(
+                title = note.title,
+                folder = "",
+                blocks = repository.getBlocks(id),
+                ocrTexts = ocr,
+            )
+        }
+        buildCopyNotesText(payloads)
     }
 
     private suspend fun NoteEntity.toListItem(activeQuery: String): NoteListItem {

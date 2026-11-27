@@ -78,10 +78,12 @@ class DriveSyncManager(
             .toMutableMap()
         val remoteFolderToLocal = mutableMapOf<Long, Long>()
         manifest.folders.forEach { remote ->
-            val localId = folderIdByLowerName[remote.name.lowercase(Locale.ROOT)]
-                ?: repository.findOrCreateFolder(remote.name).also {
-                    folderIdByLowerName[remote.name.lowercase(Locale.ROOT)] = it
-                }
+            val localId = repository.findOrCreateFolder(
+                name = remote.name,
+                colorHex = remote.colorHex,
+                iconKey = remote.iconKey,
+            )
+            folderIdByLowerName[remote.name.lowercase(Locale.ROOT)] = localId
             remoteFolderToLocal[remote.id] = localId
         }
         val folders = repository.getAllFolders()
@@ -239,7 +241,14 @@ class DriveSyncManager(
 
         val manifestOut = DriveManifest(
             schemaVersion = 1,
-            folders = repository.getAllFolders().map { RemoteFolder(it.id, it.name) },
+            folders = repository.getAllFolders().map {
+                RemoteFolder(
+                    id = it.id,
+                    name = it.name,
+                    colorHex = it.colorHex,
+                    iconKey = it.iconKey,
+                )
+            },
             notes = newNoteMeta.values.sortedBy { it.id },
             attachments = newAttachments.mapKeys { it.key.toString() },
         )
@@ -305,6 +314,7 @@ class DriveSyncManager(
             updatedAt = remote.updatedAt,
             remoteOcrText = remote.ocrText,
             fontStyle = remote.fontStyle,
+            isPinned = remote.isPinned,
         )
 
         val existingAttachments = repository.getAttachments(remote.id)
@@ -358,6 +368,7 @@ class DriveSyncManager(
                 updatedAt = remote.updatedAt,
                 remoteOcrText = remote.ocrText,
                 fontStyle = remote.fontStyle,
+                isPinned = remote.isPinned,
             )
         }
         tombstones.clear(remote.id)
@@ -419,6 +430,7 @@ class DriveSyncManager(
             title = note.title,
             updatedAt = note.updatedAt,
             deletedAt = null,
+            isPinned = note.isPinned,
             blocks = json.parseToJsonElement(note.blocksJson),
             plainText = note.plainTextIndex,
             ocrText = note.ocrTextIndex,

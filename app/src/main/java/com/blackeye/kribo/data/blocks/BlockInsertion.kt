@@ -14,6 +14,8 @@ enum class BlockKind {
     TITLE_1,
     TITLE_2,
     PARAGRAPH,
+    ORDERED_LIST,
+    BULLET_LIST,
     TASK,
     TOGGLE,
     QUOTE,
@@ -94,6 +96,48 @@ object BlockInsertion {
         }
     }
 
+    /** Enter on a list item: blank converts to a paragraph, non-blank adds the next item below. */
+    fun exitBelowList(blocks: List<NoteBlock>, blockId: String): Outcome {
+        val index = blocks.indexOfFirst { it.id == blockId }
+        val current = blocks.getOrNull(index) as? ListBlock ?: return Outcome(blocks, null)
+        return if (current.text.isBlank()) {
+            val paragraph = ParagraphBlock()
+            Outcome(blocks.toMutableList().apply { this[index] = paragraph }, paragraph.id)
+        } else {
+            val next = ListBlock(ordered = current.ordered)
+            Outcome(blocks.toMutableList().apply { add(index + 1, next) }, next.id)
+        }
+    }
+
+    /**
+     * Handles a typed or pasted newline inside a [ListBlock]:
+     * - blank item → converts in place to [ParagraphBlock];
+     * - Enter at end → appends a fresh [ListBlock] of the same ordered/bullet kind below;
+     * - Enter in the middle / multi-line paste → splits into consecutive [ListBlock] items.
+     */
+    fun enterInList(blocks: List<NoteBlock>, blockId: String, valueWithNewline: String): Outcome {
+        val index = blocks.indexOfFirst { it.id == blockId }
+        val current = blocks.getOrNull(index) as? ListBlock ?: return Outcome(blocks, null)
+        if (valueWithNewline.trim().isEmpty()) {
+            val paragraph = ParagraphBlock()
+            return Outcome(blocks.toMutableList().apply { this[index] = paragraph }, paragraph.id)
+        }
+        val lines = valueWithNewline.split('\n')
+        val head = lines.first()
+        val tail = lines.drop(1)
+        val (headSpans, tailSpans) = SpanEditor.splitSpans(current.spans, head.length)
+        val updated = blocks.toMutableList()
+        updated[index] = current.copy(text = head, spans = headSpans)
+        var focusId = current.id
+        tail.forEachIndexed { offset, line ->
+            val spans = if (offset == 0 && tail.size == 1) tailSpans else emptyList()
+            val next = ListBlock(text = line, ordered = current.ordered, spans = spans)
+            updated.add(index + 1 + offset, next)
+            focusId = next.id
+        }
+        return Outcome(updated, focusId)
+    }
+
     /** #39: bottom "New paragraph" row; a trailing empty paragraph is reused, not stacked. */
     fun appendParagraph(blocks: List<NoteBlock>): Outcome {
         val last = blocks.lastOrNull()
@@ -165,12 +209,16 @@ object BlockInsertion {
             val selected = text.substring(start, end)
             val before = text.substring(0, start)
             val after = text.substring(end)
+            val selectedSpans = SpanEditor.splitSpans(
+                SpanEditor.splitSpans(spansOf(active), end).first,
+                start,
+            ).second
             val parts = mutableListOf<NoteBlock>()
             if (before.isNotBlank()) parts += copyOf(active, before, start)
             val newPart = if (kind == BlockKind.TOGGLE) {
-                ToggleBlock(id = newBlock.id, title = selected, expanded = true)
+                ToggleBlock(id = newBlock.id, title = selected, expanded = true, titleSpans = selectedSpans)
             } else {
-                ofKind(kind, newBlock, selected)
+                ofKind(kind, newBlock, selected, selectedSpans)
             }
             parts += newPart
             if (after.isNotBlank()) {
@@ -179,6 +227,7 @@ object BlockInsertion {
                 parts += when (afterBlock) {
                     is TitleBlock -> afterBlock.copy(spans = afterSpans)
                     is ParagraphBlock -> afterBlock.copy(spans = afterSpans)
+                    is ListBlock -> afterBlock.copy(spans = afterSpans)
                     is TaskBlock -> afterBlock.copy(spans = afterSpans)
                     is QuoteBlock -> afterBlock.copy(spans = afterSpans)
                     else -> afterBlock
@@ -191,6 +240,8 @@ object BlockInsertion {
             BlockKind.TITLE_1 -> active is TitleBlock && active.level <= 1
             BlockKind.TITLE_2 -> active is TitleBlock && active.level > 1
             BlockKind.PARAGRAPH -> active is ParagraphBlock
+            BlockKind.ORDERED_LIST -> active is ListBlock && active.ordered
+            BlockKind.BULLET_LIST -> active is ListBlock && !active.ordered
             BlockKind.TASK -> active is TaskBlock
             BlockKind.QUOTE -> active is QuoteBlock
             BlockKind.TOGGLE, BlockKind.LINK, BlockKind.PHOTO -> false
@@ -198,10 +249,10 @@ object BlockInsertion {
         val singleLine = !text.contains('\n')
 
         if (singleLine && isTextKind(kind) && !sameType) {
-            // One-tap conversion: the whole text moves to the new type, caret stays put.
+            // One-tap conversion: the whole text (and inline spans) moves to the new type.
             return Outcome(
                 blocks.toMutableList().apply {
-                    this[activeIndex] = ofKind(kind, newBlock, text)
+                    this[activeIndex] = ofKind(kind, newBlock, text, spansOf(active))
                 },
                 newBlock.id,
                 focusCaret = start,
@@ -251,13 +302,21 @@ object BlockInsertion {
     }
 
     private fun isTextKind(kind: BlockKind): Boolean = when (kind) {
-        BlockKind.TITLE_1, BlockKind.TITLE_2, BlockKind.PARAGRAPH, BlockKind.TASK, BlockKind.QUOTE -> true
+        BlockKind.TITLE_1,
+        BlockKind.TITLE_2,
+        BlockKind.PARAGRAPH,
+        BlockKind.ORDERED_LIST,
+        BlockKind.BULLET_LIST,
+        BlockKind.TASK,
+        BlockKind.QUOTE,
+        -> true
         BlockKind.TOGGLE, BlockKind.LINK, BlockKind.PHOTO -> false
     }
 
     private fun spansOf(block: NoteBlock): List<InlineSpan> = when (block) {
         is TitleBlock -> block.spans
         is ParagraphBlock -> block.spans
+        is ListBlock -> block.spans
         is TaskBlock -> block.spans
         is QuoteBlock -> block.spans
         is ToggleBlock -> block.titleSpans
@@ -267,6 +326,7 @@ object BlockInsertion {
     private fun textOf(block: NoteBlock): String = when (block) {
         is TitleBlock -> block.text
         is ParagraphBlock -> block.text
+        is ListBlock -> block.text
         is TaskBlock -> block.text
         is QuoteBlock -> block.text
         else -> ""
@@ -281,6 +341,7 @@ object BlockInsertion {
         return when (block) {
             is TitleBlock -> block.copy(id = BlockCodec.newId(), text = text, spans = spans)
             is ParagraphBlock -> block.copy(id = BlockCodec.newId(), text = text, spans = spans)
+            is ListBlock -> block.copy(id = BlockCodec.newId(), text = text, spans = spans)
             is TaskBlock -> block.copy(id = BlockCodec.newId(), text = text, spans = spans)
             is QuoteBlock -> block.copy(id = BlockCodec.newId(), text = text, spans = spans)
             else -> ParagraphBlock(text = text)
@@ -288,15 +349,22 @@ object BlockInsertion {
     }
 
     /** Builds the requested type from [template] (its id and extra fields stay). */
-    private fun ofKind(kind: BlockKind, template: NoteBlock, text: String): NoteBlock {
+    private fun ofKind(
+        kind: BlockKind,
+        template: NoteBlock,
+        text: String,
+        spans: List<InlineSpan> = emptyList(),
+    ): NoteBlock {
         val id = template.id
         return when (kind) {
-            BlockKind.TITLE_1 -> TitleBlock(id = id, text = text, level = 1)
-            BlockKind.TITLE_2 -> TitleBlock(id = id, text = text, level = 2)
-            BlockKind.PARAGRAPH -> ParagraphBlock(id = id, text = text)
-            BlockKind.TASK -> TaskBlock(id = id, text = text)
-            BlockKind.QUOTE -> QuoteBlock(id = id, text = text)
-            BlockKind.TOGGLE -> ToggleBlock(id = id, title = text, expanded = true)
+            BlockKind.TITLE_1 -> TitleBlock(id = id, text = text, level = 1, spans = spans)
+            BlockKind.TITLE_2 -> TitleBlock(id = id, text = text, level = 2, spans = spans)
+            BlockKind.PARAGRAPH -> ParagraphBlock(id = id, text = text, spans = spans)
+            BlockKind.ORDERED_LIST -> ListBlock(id = id, text = text, ordered = true, spans = spans)
+            BlockKind.BULLET_LIST -> ListBlock(id = id, text = text, ordered = false, spans = spans)
+            BlockKind.TASK -> TaskBlock(id = id, text = text, spans = spans)
+            BlockKind.QUOTE -> QuoteBlock(id = id, text = text, spans = spans)
+            BlockKind.TOGGLE -> ToggleBlock(id = id, title = text, expanded = true, titleSpans = spans)
             BlockKind.LINK -> LinkBlock(id = id, url = text)
             BlockKind.PHOTO -> template
         }

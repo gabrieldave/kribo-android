@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -26,6 +27,7 @@ import com.blackeye.kribo.ui.billing.PaywallReason
 import com.blackeye.kribo.ui.billing.ProPaywallContent
 import com.blackeye.kribo.ui.drive.DriveSyncContent
 import com.blackeye.kribo.ui.drive.DriveSyncMessage
+import com.blackeye.kribo.ui.home.BulkSelectionBar
 import com.blackeye.kribo.ui.home.QuickCaptureBar
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.settings.AppLanguage
@@ -103,6 +105,59 @@ class LayoutOverflowTest {
     }
 
     @Test
+    fun bulkSelectionBarFits360DpInBothLanguages() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(FOOTER_LANE_DP.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        BulkSelectionBar(
+                            anyPinned = false,
+                            onMove = {},
+                            onPin = {},
+                            onCopy = {},
+                            onShareToAi = {},
+                            onDelete = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val lanePx = FOOTER_LANE_DP * TEST_DENSITY
+        val tags = listOf(
+            "home-bulk-move",
+            "home-bulk-pin",
+            "home-bulk-copy",
+            "home-bulk-ai",
+            "home-bulk-delete",
+        )
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                tags.forEach { tag ->
+                    assertControlFits(tag, fontScale)
+                    val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                        .fetchSemanticsNode().boundsInRoot
+                    assertTrue(
+                        "$tag overflows lane at scale $fontScale (${locale.language}): ${bounds.right} > $lanePx",
+                        bounds.left >= 0f && bounds.right <= lanePx + 1f,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun editorToolbarAndQuickCaptureFit360Dp() {
         var config by mutableStateOf(UiConfig(Locale("es"), 1f))
         compose.setContent {
@@ -144,19 +199,21 @@ class LayoutOverflowTest {
                 compose.waitForIdle()
                 val toolbarButtons = compose.onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
                     .fetchSemanticsNodes()
-                assertTrue("Missing toolbar buttons: ${toolbarButtons.size}", toolbarButtons.size >= 5)
+                assertEquals("Expected Aa plus the ten block actions", 11, toolbarButtons.size)
+                assertControlFits("toolbar-format", fontScale, maxHeightDp = 60f)
                 assertControlFits("toolbar-h1", fontScale, maxHeightDp = 60f)
                 assertControlFits("toolbar-h2", fontScale, maxHeightDp = 60f)
+                assertControlFits("toolbar-olist", fontScale, maxHeightDp = 60f)
+                assertControlFits("toolbar-ulist", fontScale, maxHeightDp = 60f)
                 toolbarButtons.forEachIndexed { index, node ->
                     val bounds = node.boundsInRoot
                     val heightDp = bounds.height / TEST_DENSITY
                     val widthDp = bounds.width / TEST_DENSITY
-                    // The scroll strip clips the bounds of off-screen cells: in large-font
-                    // mode the last cell may report 0 through clipped semantics. The first
-                    // cells (always on screen) must never collapse.
-                    if (fontScale < 1.4f || index < 8) {
+                    // The 11-action strip scrolls smoothly at 44dp/cell; off-screen cells clip in
+                    // semantics bounds, while visible leading cells must never collapse or squish.
+                    if (index < 6) {
                         assertTrue("Squished toolbar button at scale $fontScale: $heightDp", heightDp <= 60f)
-                        assertTrue("Collapsed toolbar button at scale $fontScale: $widthDp", widthDp >= 34f)
+                        assertTrue("Collapsed toolbar button at scale $fontScale: $widthDp", widthDp >= 40f)
                     }
                 }
                 assertControlFits("home-quick-send", fontScale, maxHeightDp = 64f)
@@ -173,83 +230,60 @@ class LayoutOverflowTest {
     }
 
     @Test
-    fun editorToolbarKeepsAllEightActionsInsideTheFooterLane() {
-        // AppScreen insets the footer by 20.dp per side, so a 360dp phone leaves a 320dp lane.
+    fun editorToolbarScrollsAllElevenActionsAt360DpInBothLanguages() {
+        // Real footer lane on a 360dp phone: 360 minus AppScreen's 20dp side margins (320dp).
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
         compose.setContent {
-            KriboTheme {
-                Box(
-                    modifier = Modifier
-                        .width(FOOTER_LANE_DP.dp)
-                        .background(MaterialTheme.colorScheme.background),
-                ) {
-                    EditorToolbar(
-                        onAdd = {},
-                        onAttachImage = {},
-                        activeBlock = null,
-                    )
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(FOOTER_LANE_DP.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        EditorToolbar(
+                            onAdd = {},
+                            onAttachImage = {},
+                            activeBlock = null,
+                        )
+                    }
                 }
             }
         }
-        compose.waitForIdle()
 
-        val lanePx = FOOTER_LANE_DP * TEST_DENSITY
-        val actions = compose
-            .onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
-            .fetchSemanticsNodes()
-        assertEquals("Expected Aa plus the eight block actions", 9, actions.size)
-        actions.forEach { node ->
-            val bounds = node.boundsInRoot
-            val widthDp = bounds.width / TEST_DENSITY
-            assertTrue(
-                "Action clipped at the lane edge: ${bounds.left}..${bounds.right} of $lanePx",
-                bounds.left >= 0f && bounds.right <= lanePx + 1f,
-            )
-            assertTrue("Action collapsed to ${widthDp}dp", widthDp >= 34f)
-        }
-        // "Add photo" is the seventh action: it must stay on screen, never in a hidden scrollbar.
-        val photo = compose.onNodeWithTag("toolbar-image", useUnmergedTree = true)
-            .fetchSemanticsNode().boundsInRoot
-        assertTrue("Add photo is off-screen", photo.right <= lanePx + 1f)
-    }
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
 
-    @Test
-    fun editorToolbarShowsAllEightActionsWithoutScroll() {
-        // Real footer lane on a 360dp phone: 360 minus AppScreen's 20dp side margins.
-        compose.setContent {
-            KriboTheme {
-                Box(
-                    modifier = Modifier
-                        .width(FOOTER_LANE_DP.dp)
-                        .background(MaterialTheme.colorScheme.background),
-                ) {
-                    EditorToolbar(
-                        onAdd = {},
-                        onAttachImage = {},
-                        activeBlock = null,
-                    )
+                val actions = compose
+                    .onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                assertEquals("Expected Aa plus the ten block actions", 11, actions.size)
+
+                listOf(
+                    "toolbar-format",
+                    "toolbar-h1",
+                    "toolbar-h2",
+                    "toolbar-olist",
+                    "toolbar-ulist",
+                ).forEach { tag ->
+                    compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+                    compose.waitForIdle()
+                    assertControlFits(tag, fontScale, maxHeightDp = 60f)
+                }
+
+                // Trailing actions remain reachable via smooth horizontal scroll without squishing.
+                listOf("toolbar-toggle", "toolbar-link", "toolbar-image").forEach { tag ->
+                    compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+                    compose.waitForIdle()
+                    assertControlFits(tag, fontScale, maxHeightDp = 60f)
                 }
             }
-        }
-        compose.waitForIdle()
-
-        val lanePx = FOOTER_LANE_DP * TEST_DENSITY
-        val actions = compose
-            .onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
-            .fetchSemanticsNodes()
-        assertEquals("Expected Aa plus the eight block actions", 9, actions.size)
-        listOf("toolbar-h1", "toolbar-h2", "toolbar-toggle", "toolbar-link", "toolbar-image").forEach { tag ->
-            compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
-        }
-        actions.forEach { node ->
-            val bounds = node.boundsInRoot
-            assertTrue(
-                "Action clipped outside the lane: ${bounds.left}..${bounds.right} of $lanePx",
-                bounds.left >= 0f && bounds.right <= lanePx + 1f,
-            )
-            assertTrue(
-                "Action collapsed to ${bounds.width / TEST_DENSITY}dp",
-                bounds.width / TEST_DENSITY >= 34f,
-            )
         }
     }
 

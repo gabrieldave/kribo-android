@@ -2,6 +2,7 @@ package com.blackeye.kribo.domain.editor
 
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.LinkBlock
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
@@ -199,5 +200,21 @@ class BlockReorderTest {
             "kribo.iareal.net",
             BlockReorder.formatCompactDisplayUrl("kribo.iareal.net"),
         )
+    }
+
+    @Test
+    fun searchFindsListBlocksKeepingOriginalIndex() {
+        val blocks = listOf(
+            ParagraphBlock(id = "p", text = "Intro"),
+            ListBlock(id = "l1", text = "Primer paso crítico", ordered = true),
+            ListBlock(id = "l2", text = "Viñeta rápida", ordered = false),
+        )
+
+        val orderedMatch = BlockReorder.filterBlocksForSearch(blocks, "critico")
+        assertEquals(listOf(1), orderedMatch.map { it.index })
+        assertEquals("l1", orderedMatch.single().value.id)
+
+        val bulletMatch = BlockReorder.filterBlocksForSearch(blocks, "vineta")
+        assertEquals(listOf(2), bulletMatch.map { it.index })
     }
 }

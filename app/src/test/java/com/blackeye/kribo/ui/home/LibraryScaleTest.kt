@@ -98,4 +98,27 @@ class LibraryScaleTest {
 
         assertEquals(first, second)
     }
+
+    @Test
+    fun resolveScopeFolderFiltersSelectedFolderWhenQueryIsBlankEvenIfAllScopeTrue() {
+        assertEquals(7L, resolveScopeFolder(folderId = 7L, query = "", searchAllScope = true))
+        assertEquals(7L, resolveScopeFolder(folderId = 7L, query = "   ", searchAllScope = true))
+    }
+
+    @Test
+    fun resolveScopeFolderSearchesAllNotesWhenQueryIsPresentAndAllScopeTrue() {
+        assertEquals(null, resolveScopeFolder(folderId = 7L, query = "mac", searchAllScope = true))
+    }
+
+    @Test
+    fun resolveScopeFolderStaysInFolderWhenQueryIsPresentAndAllScopeFalse() {
+        assertEquals(7L, resolveScopeFolder(folderId = 7L, query = "mac", searchAllScope = false))
+    }
+
+    @Test
+    fun resolveScopeFolderReturnsNullWhenNoFolderSelected() {
+        assertEquals(null, resolveScopeFolder(folderId = null, query = "", searchAllScope = false))
+        assertEquals(null, resolveScopeFolder(folderId = null, query = "mac", searchAllScope = false))
+        assertEquals(null, resolveScopeFolder(folderId = null, query = "", searchAllScope = true))
+    }
 }

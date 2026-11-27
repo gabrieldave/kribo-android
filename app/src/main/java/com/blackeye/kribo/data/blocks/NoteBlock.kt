@@ -100,6 +100,21 @@ data class LinkBlock(
 }
 
 @Serializable
+@SerialName("list")
+data class ListBlock(
+    override val id: String = BlockCodec.newId(),
+    val text: String = "",
+    val ordered: Boolean = false,
+    val spans: List<InlineSpan> = emptyList(),
+) : NoteBlock {
+    override fun plainText(): String {
+        val clean = text.trim()
+        if (clean.isEmpty()) return ""
+        return if (ordered) "1. $clean" else "• $clean"
+    }
+}
+
+@Serializable
 @SerialName("attachment")
 data class AttachmentBlock(
     override val id: String = BlockCodec.newId(),
@@ -116,6 +131,24 @@ data class AttachmentBlock(
     val manual: Boolean = false,
 ) : NoteBlock {
     override fun plainText(): String = previewText
+}
+
+/** Computes continuous 1-based numbering for consecutive ordered [ListBlock] items. */
+fun orderedListIndex(blocks: List<NoteBlock>, index: Int): Int {
+    val target = blocks.getOrNull(index) as? ListBlock ?: return 0
+    if (!target.ordered) return 0
+    var count = 1
+    var cursor = index - 1
+    while (cursor >= 0) {
+        val previous = blocks[cursor]
+        if (previous is ListBlock && previous.ordered) {
+            count++
+            cursor--
+        } else {
+            break
+        }
+    }
+    return count
 }
 
 object BlockCodec {
@@ -140,7 +173,17 @@ object BlockCodec {
     }
 
     fun plainText(blocks: List<NoteBlock>): String = blocks
-        .map { it.plainText().trim() }
+        .mapIndexed { index, block ->
+            when (block) {
+                is ListBlock -> {
+                    val clean = block.text.trim()
+                    if (clean.isEmpty()) ""
+                    else if (block.ordered) "${orderedListIndex(blocks, index)}. $clean"
+                    else "• $clean"
+                }
+                else -> block.plainText().trim()
+            }
+        }
         .filter { it.isNotEmpty() }
         .joinToString(separator = "\n")
 

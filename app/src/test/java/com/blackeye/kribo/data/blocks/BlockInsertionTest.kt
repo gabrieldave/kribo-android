@@ -373,4 +373,107 @@ class BlockInsertionTest {
         assertEquals(ids.size, ids.toSet().size)
         assertFalse(ids.contains("p"))
     }
+
+    @Test
+    fun listConversionPreservesTextAndSpansAndTogglesOrderedStyle() {
+        val span = InlineSpan(0, 4, SpanType.BOLD)
+        val blocks = listOf(ParagraphBlock(id = "p", text = "Paso uno", spans = listOf(span)))
+
+        val toOrdered = BlockInsertion.apply(
+            blocks,
+            "p",
+            Caret(4, 4),
+            ListBlock(ordered = true),
+            BlockKind.ORDERED_LIST,
+        )
+        val ordered = toOrdered.blocks.single() as ListBlock
+        assertTrue(ordered.ordered)
+        assertEquals("Paso uno", ordered.text)
+        assertEquals(listOf(span), ordered.spans)
+
+        val toBullet = BlockInsertion.apply(
+            toOrdered.blocks,
+            ordered.id,
+            Caret(4, 4),
+            ListBlock(ordered = false),
+            BlockKind.BULLET_LIST,
+        )
+        val bullet = toBullet.blocks.single() as ListBlock
+        assertFalse(bullet.ordered)
+        assertEquals("Paso uno", bullet.text)
+        assertEquals(listOf(span), bullet.spans)
+    }
+
+    @Test
+    fun selectionSplitsIntoListBlockAndCaretSplitsListPreservingSpans() {
+        val boldSpan = InlineSpan(5, 10, SpanType.BOLD)
+        val blocks = listOf(ParagraphBlock(id = "p", text = "hola mundo cruel", spans = listOf(boldSpan)))
+
+        val outcome = BlockInsertion.apply(
+            blocks,
+            "p",
+            Caret(5, 10),
+            ListBlock(ordered = true),
+            BlockKind.ORDERED_LIST,
+        )
+        assertEquals(3, outcome.blocks.size)
+        assertEquals("hola ", (outcome.blocks[0] as ParagraphBlock).text)
+        val mid = outcome.blocks[1] as ListBlock
+        assertTrue(mid.ordered)
+        assertEquals("mundo", mid.text)
+        assertEquals(listOf(InlineSpan(0, 5, SpanType.BOLD)), mid.spans)
+        assertEquals(" cruel", (outcome.blocks[2] as ParagraphBlock).text)
+    }
+
+    @Test
+    fun enterOnListCreatesNextSameTypeAndBlankListConvertsToParagraph() {
+        val ordered = listOf(ListBlock(id = "l1", text = "Primero", ordered = true))
+        val next = BlockInsertion.exitBelowList(ordered, "l1")
+        assertEquals(2, next.blocks.size)
+        val second = next.blocks[1] as ListBlock
+        assertTrue(second.ordered)
+        assertEquals("", second.text)
+        assertEquals(second.id, next.focusBlockId)
+
+        val exited = BlockInsertion.exitBelowList(next.blocks, second.id)
+        assertEquals(2, exited.blocks.size)
+        assertTrue(exited.blocks[1] is ParagraphBlock)
+        assertEquals(exited.blocks[1].id, exited.focusBlockId)
+
+        val bullet = listOf(ListBlock(id = "b1", text = "Punto", ordered = false))
+        val nextBullet = BlockInsertion.exitBelowList(bullet, "b1")
+        assertEquals(2, nextBullet.blocks.size)
+        assertFalse((nextBullet.blocks[1] as ListBlock).ordered)
+    }
+
+    @Test
+    fun enterInListSplitsAndAppendsWithoutKeepingNewlineAndExitsWhenBlank() {
+        val ordered = listOf(
+            ListBlock(
+                id = "l1",
+                text = "Hola mundo",
+                ordered = true,
+                spans = listOf(InlineSpan(0, 4, SpanType.BOLD), InlineSpan(5, 10, SpanType.ITALIC)),
+            ),
+        )
+        val split = BlockInsertion.enterInList(ordered, "l1", "Hola\nmundo")
+        assertEquals(2, split.blocks.size)
+        val first = split.blocks[0] as ListBlock
+        val second = split.blocks[1] as ListBlock
+        assertEquals("Hola", first.text)
+        assertEquals(listOf(InlineSpan(0, 4, SpanType.BOLD)), first.spans)
+        assertTrue(second.ordered)
+        assertEquals("mundo", second.text)
+        assertEquals(second.id, split.focusBlockId)
+
+        val endEnter = BlockInsertion.enterInList(listOf(ListBlock(id = "l2", text = "Uno", ordered = true)), "l2", "Uno\n")
+        assertEquals(2, endEnter.blocks.size)
+        assertEquals("Uno", (endEnter.blocks[0] as ListBlock).text)
+        assertEquals("", (endEnter.blocks[1] as ListBlock).text)
+        assertTrue((endEnter.blocks[1] as ListBlock).ordered)
+
+        val blankExit = BlockInsertion.enterInList(endEnter.blocks, endEnter.blocks[1].id, "\n")
+        assertEquals(2, blankExit.blocks.size)
+        assertTrue(blankExit.blocks[1] is ParagraphBlock)
+    }
 }

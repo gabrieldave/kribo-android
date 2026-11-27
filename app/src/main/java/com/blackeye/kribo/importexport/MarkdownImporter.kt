@@ -2,6 +2,7 @@ package com.blackeye.kribo.importexport
 
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
@@ -119,7 +120,7 @@ class MarkdownImporter {
                 flushParagraph()
                 flushQuote()
                 val text = bullet.groupValues[1].trim()
-                if (text.isNotEmpty()) blocks += ParagraphBlock(text = "• $text")
+                if (text.isNotEmpty()) blocks += ListBlock(text = text, ordered = false)
                 return@forEach
             }
 
@@ -128,7 +129,7 @@ class MarkdownImporter {
                 flushParagraph()
                 flushQuote()
                 val text = numbered.groupValues[1].trim()
-                if (text.isNotEmpty()) blocks += ParagraphBlock(text = "• $text")
+                if (text.isNotEmpty()) blocks += ListBlock(text = text, ordered = true)
                 return@forEach
             }
 

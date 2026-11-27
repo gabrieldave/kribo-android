@@ -1,4 +1,4 @@
-# AGENTS.md — Reglas de Kribo Android
+# AGENTS.md — Reglas de Kribo Android (v1.0.17)
 
 Este documento es vinculante para cualquier agente o persona que toque el repositorio.
 Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CEO.
@@ -60,9 +60,9 @@ Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CE
 
 ## 5. Datos
 
-- Room v2 (`FolderEntity`, `NoteEntity`, `AttachmentEntity`) con `exportSchema = true`; los esquemas viven versionados en `app/schemas/`.
-- Los bloques del editor se serializan con kotlinx.serialization en `blocksJson`; nunca romper la compatibilidad hacia atrás.
-- Toda migración lleva su test (`Migration1To2Test`).
+- Room v3 (`FolderEntity`, `NoteEntity`, `AttachmentEntity`) con `exportSchema = true`; los esquemas viven versionados en `app/schemas/`.
+- Los bloques del editor se serializan con kotlinx.serialization en `blocksJson` (incluyendo listas ordenadas/viñetas `list` en espejo con `kribo-web`); nunca romper la compatibilidad hacia atrás.
+- Toda migración lleva su test (`Migration1To2Test`, `Migration2To3Test`).
 - Toda migración debe ser explícita y revisable. Prohibido `fallbackToDestructiveMigration`.
 - El repositorio (`NoteRepository`) es la única puerta de acceso a la base de datos.
 

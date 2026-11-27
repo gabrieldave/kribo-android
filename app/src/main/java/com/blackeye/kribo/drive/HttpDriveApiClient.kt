@@ -6,6 +6,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -20,9 +21,12 @@ import kotlinx.serialization.json.putJsonObject
  * no extra startup weight. Every request is authorized with the short-lived
  * token obtained from DriveAuthManager.
  */
-class HttpDriveApiClient(
+class HttpDriveApiClient internal constructor(
     private val tokenProvider: suspend () -> String?,
+    private val requestExecutor: (suspend (url: String, method: String, contentType: String?, body: ByteArray?) -> ByteArray)?,
 ) : DriveApiClient {
+
+    constructor(tokenProvider: suspend () -> String?) : this(tokenProvider, null)
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -117,16 +121,32 @@ class HttpDriveApiClient(
 
     private suspend fun searchFiles(query: String): List<DriveFile> {
         val encoded = URLEncoder.encode(query, "UTF-8").replace("+", "%20")
-        val bytes = execute(
-            "$BASE/files?q=$encoded&pageSize=1000&spaces=drive&fields=files($FIELDS)",
-            "GET",
-            null,
-            null,
-        )
-        val root = json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
-        return root["files"]?.jsonArray?.mapNotNull { element ->
-            runCatching { parseFile(element.jsonObject) }.getOrNull()
-        }.orEmpty()
+        val all = mutableListOf<DriveFile>()
+        val seenTokens = hashSetOf<String>()
+        var pageToken: String? = null
+        while (true) {
+            val tokenParam = pageToken?.let {
+                "&pageToken=${URLEncoder.encode(it, "UTF-8").replace("+", "%20")}"
+            }.orEmpty()
+            val bytes = execute(
+                "$BASE/files?q=$encoded&pageSize=1000&spaces=drive&fields=nextPageToken,files($FIELDS)$tokenParam",
+                "GET",
+                null,
+                null,
+            )
+            val root = json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+            all += root["files"]?.jsonArray?.mapNotNull { element ->
+                runCatching { parseFile(element.jsonObject) }.getOrNull()
+            }.orEmpty()
+            val next = root["nextPageToken"]
+                ?.takeIf { it !is JsonNull }
+                ?.jsonPrimitive
+                ?.content
+                ?.takeIf { it.isNotBlank() }
+            if (next == null || !seenTokens.add(next)) break
+            pageToken = next
+        }
+        return all
     }
 
     private suspend fun getFile(fileId: String): DriveFile {
@@ -160,6 +180,7 @@ class HttpDriveApiClient(
         body: ByteArray?,
     ): ByteArray {
         require(url.startsWith("https://")) { "Drive requests must use HTTPS" }
+        requestExecutor?.let { return it(url, method, contentType, body) }
         val token = tokenProvider() ?: throw DriveAuthRequiredException()
         val connection = URL(url).openConnection() as HttpURLConnection
         try {

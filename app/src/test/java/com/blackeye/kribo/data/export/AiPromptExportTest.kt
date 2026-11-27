@@ -2,6 +2,7 @@ package com.blackeye.kribo.data.export
 
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.LinkBlock
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
@@ -20,6 +21,9 @@ class AiPromptExportTest {
             TitleBlock(text = "Plan de lanzamiento"),
             TitleBlock(text = "Objetivos de la semana", level = 2),
             ParagraphBlock(text = "Mantener notas rápidas, privadas y listas sin internet."),
+            ListBlock(text = "Paso uno", ordered = true),
+            ListBlock(text = "Paso dos", ordered = true),
+            ListBlock(text = "Idea extra", ordered = false),
             QuoteBlock(text = "La claridad supera a la velocidad."),
             LinkBlock(url = "https://kribo.iareal.net"),
             TaskBlock(text = "Revisar escáner OCR offline", checked = true),
@@ -41,6 +45,9 @@ class AiPromptExportTest {
         assertTrue(text.contains("Carpeta: General"))
         assertTrue(text.contains("Objetivos de la semana"))
         assertTrue(text.contains("Mantener notas rápidas, privadas y listas sin internet."))
+        assertTrue(text.contains("1. Paso uno"))
+        assertTrue(text.contains("2. Paso dos"))
+        assertTrue(text.contains("• Idea extra"))
         assertTrue(text.contains("> La claridad supera a la velocidad."))
         assertTrue(text.contains("https://kribo.iareal.net"))
         assertTrue(text.contains("[x] Revisar escáner OCR offline"))

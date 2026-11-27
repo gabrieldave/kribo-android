@@ -128,26 +128,30 @@ class NoteRepository(
         updatedAt: Long,
         remoteOcrText: String = "",
         fontStyle: String = "SANS",
+        isPinned: Boolean? = null,
     ) {
         val existing = noteDao.getById(noteId)
         val attachmentText = attachmentDao.getForNote(noteId)
             .mapNotNull { it.extractedText.takeIf(String::isNotBlank) }
             .joinToString(separator = "\n")
         val cleanTitle = title.ifBlank { BlockCodec.derivedTitle(blocks) }.take(120)
-        noteDao.upsert(
-            NoteEntity(
-                id = noteId,
-                folderId = folderId,
-                title = cleanTitle,
-                blocksJson = BlockCodec.encode(blocks),
-                plainTextIndex = BlockCodec.plainText(blocks),
-                ocrTextIndex = attachmentText.ifBlank { remoteOcrText },
-                isPinned = existing?.isPinned ?: false,
-                createdAt = existing?.createdAt ?: updatedAt,
-                updatedAt = updatedAt,
-                fontStyle = fontStyle.takeIf { it.isNotBlank() } ?: "SANS",
-            ),
+        val entity = NoteEntity(
+            id = noteId,
+            folderId = folderId,
+            title = cleanTitle,
+            blocksJson = BlockCodec.encode(blocks),
+            plainTextIndex = BlockCodec.plainText(blocks),
+            ocrTextIndex = attachmentText.ifBlank { remoteOcrText },
+            isPinned = isPinned ?: existing?.isPinned ?: false,
+            createdAt = existing?.createdAt ?: updatedAt,
+            updatedAt = updatedAt,
+            fontStyle = fontStyle.takeIf { it.isNotBlank() } ?: "SANS",
         )
+        if (existing != null) {
+            noteDao.update(entity)
+        } else {
+            noteDao.upsert(entity)
+        }
     }
 
     suspend fun refreshOcrIndex(noteId: Long) {
@@ -240,10 +244,32 @@ class NoteRepository(
         return true
     }
 
-    suspend fun findOrCreateFolder(name: String): Long {
+    suspend fun findOrCreateFolder(
+        name: String,
+        colorHex: String? = null,
+        iconKey: String? = null,
+    ): Long {
         val clean = name.trim().take(48).ifBlank { "Importadas" }
-        folderDao.findByName(clean)?.let { return it.id }
-        createFolder(clean)?.let { return it }
+        val safeColor = colorHex?.trim()?.takeIf { HEX_COLOR_PATTERN.matches(it) }
+        val safeIcon = iconKey?.trim()?.take(32)?.takeIf { it.isNotEmpty() }
+        val existing = folderDao.findByName(clean)
+        if (existing != null) {
+            val updatedColor = safeColor ?: existing.colorHex
+            val updatedIcon = safeIcon ?: existing.iconKey
+            if (updatedColor != existing.colorHex || updatedIcon != existing.iconKey) {
+                folderDao.update(existing.copy(colorHex = updatedColor, iconKey = updatedIcon))
+            }
+            return existing.id
+        }
+        createFolder(
+            name = clean,
+            iconKey = safeIcon ?: "folder",
+            colorHex = safeColor ?: "#00D8FF",
+        )?.let { return it }
         return folderDao.findByName(clean)?.id ?: DEFAULT_FOLDER_GENERAL
+    }
+
+    private companion object {
+        val HEX_COLOR_PATTERN = Regex("^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
     }
 }

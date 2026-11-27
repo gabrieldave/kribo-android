@@ -12,6 +12,8 @@ class BlockCodecTest {
             TitleBlock(text = "Título", level = 1),
             TitleBlock(text = "Subtítulo", level = 2),
             ParagraphBlock(text = "Párrafo con texto"),
+            ListBlock(text = "Primer paso", ordered = true, spans = listOf(InlineSpan(0, 6, SpanType.BOLD))),
+            ListBlock(text = "Viñeta", ordered = false),
             TaskBlock(text = "Comprar pan", checked = true),
             ToggleBlock(title = "Más info", content = "Contenido", expanded = true),
             QuoteBlock(text = "Cita"),
@@ -30,10 +32,38 @@ class BlockCodecTest {
         assertEquals(blocks.size, decoded.size)
         assertEquals(blocks.map { it::class }, decoded.map { it::class })
         assertEquals("Título", (decoded[0] as TitleBlock).text)
-        assertEquals(true, (decoded[3] as TaskBlock).checked)
-        assertEquals(7L, (decoded[6] as AttachmentBlock).attachmentId)
-        assertEquals("texto OCR", (decoded[6] as AttachmentBlock).previewText)
-        assertEquals(2, (decoded[6] as AttachmentBlock).pageNumber)
+        assertEquals(true, (decoded[3] as ListBlock).ordered)
+        assertEquals("Primer paso", (decoded[3] as ListBlock).text)
+        assertEquals(1, (decoded[3] as ListBlock).spans.size)
+        assertEquals(false, (decoded[4] as ListBlock).ordered)
+        assertEquals(true, (decoded[5] as TaskBlock).checked)
+        assertEquals(7L, (decoded[8] as AttachmentBlock).attachmentId)
+        assertEquals("texto OCR", (decoded[8] as AttachmentBlock).previewText)
+        assertEquals(2, (decoded[8] as AttachmentBlock).pageNumber)
+        assertTrue(encoded.contains("\"type\":\"list\""))
+        assertTrue(encoded.contains("\"ordered\":true"))
+    }
+
+    @Test
+    fun orderedListIndexCountsConsecutiveOrderedItemsOnly() {
+        val blocks: List<NoteBlock> = listOf(
+            ListBlock(text = "Uno", ordered = true),
+            ListBlock(text = "Dos", ordered = true),
+            ListBlock(text = "Viñeta", ordered = false),
+            ListBlock(text = "Reinicio", ordered = true),
+            ParagraphBlock(text = "Texto"),
+            ListBlock(text = "Otro", ordered = true),
+        )
+
+        assertEquals(1, orderedListIndex(blocks, 0))
+        assertEquals(2, orderedListIndex(blocks, 1))
+        assertEquals(0, orderedListIndex(blocks, 2))
+        assertEquals(1, orderedListIndex(blocks, 3))
+        assertEquals(0, orderedListIndex(blocks, 4))
+        assertEquals(1, orderedListIndex(blocks, 5))
+
+        val plain = BlockCodec.plainText(blocks)
+        assertTrue(plain.contains("1. Uno\n2. Dos\n• Viñeta\n1. Reinicio"))
     }
 
     @Test

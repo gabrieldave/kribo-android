@@ -1,5 +1,6 @@
 package com.blackeye.kribo.importexport
 
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
@@ -32,6 +33,8 @@ class MarkdownImporterTest {
             > Una cita importante
 
             - Un punto
+            1. Paso uno
+            2. Paso dos
             ![foto](imagen.png)
         """.trimIndent()
 
@@ -58,7 +61,11 @@ class MarkdownImporterTest {
         val quote = note.blocks.filterIsInstance<QuoteBlock>().first()
         assertEquals("Una cita importante", quote.text)
 
-        assertTrue(note.blocks.any { it is ParagraphBlock && it.text == "• Un punto" })
+        val lists = note.blocks.filterIsInstance<ListBlock>()
+        assertEquals(3, lists.size)
+        assertEquals(ListBlock(id = lists[0].id, text = "Un punto", ordered = false), lists[0])
+        assertEquals(ListBlock(id = lists[1].id, text = "Paso uno", ordered = true), lists[1])
+        assertEquals(ListBlock(id = lists[2].id, text = "Paso dos", ordered = true), lists[2])
         assertTrue(note.blocks.any { it is ParagraphBlock && it.text == "Imagen: foto" })
     }
 

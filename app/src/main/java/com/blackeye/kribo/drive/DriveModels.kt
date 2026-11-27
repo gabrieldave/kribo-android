@@ -13,7 +13,12 @@ data class DriveManifest(
 )
 
 @Serializable
-data class RemoteFolder(val id: Long, val name: String)
+data class RemoteFolder(
+    val id: Long,
+    val name: String,
+    val colorHex: String? = null,
+    val iconKey: String? = null,
+)
 
 @Serializable
 data class RemoteNoteMeta(
@@ -48,6 +53,7 @@ data class RemoteNote(
     val title: String = "",
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,
+    val isPinned: Boolean? = null,
     val blocks: JsonElement = JsonArray(emptyList()),
     val plainText: String = "",
     val ocrText: String = "",

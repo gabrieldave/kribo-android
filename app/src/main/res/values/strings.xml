@@ -113,6 +113,8 @@
     <string name="block_heading_placeholder">Heading</string>
     <string name="block_subtitle_placeholder">Subtitle</string>
     <string name="block_paragraph_placeholder">Write…</string>
+    <string name="block_ordered_list_placeholder">Numbered item</string>
+    <string name="block_bullet_list_placeholder">List item</string>
     <string name="block_task_placeholder">Task</string>
     <string name="block_toggle_placeholder">Toggle title</string>
     <string name="block_toggle_content_placeholder">Hidden content</string>
@@ -143,6 +145,8 @@
     <string name="cd_block_title">Insert title</string>
     <string name="cd_block_subtitle">Insert subtitle</string>
     <string name="cd_block_paragraph">Insert paragraph</string>
+    <string name="cd_block_ordered_list">Insert numbered list</string>
+    <string name="cd_block_bullet_list">Insert bullet list</string>
     <string name="cd_block_task">Insert task</string>
     <string name="cd_block_toggle">Insert toggle</string>
     <string name="cd_block_quote">Insert quote</string>
@@ -164,7 +168,12 @@
     <string name="home_bulk_move">Move</string>
     <string name="home_bulk_pin">Pin</string>
     <string name="home_bulk_unpin">Unpin</string>
+    <string name="home_bulk_copy">Copy</string>
     <string name="home_bulk_delete">Delete</string>
+    <string name="note_copy_content">Copy content</string>
+    <string name="note_copied_snackbar">Content copied</string>
+    <string name="notes_copied_snackbar">Content of %1$d notes copied</string>
+    <string name="note_copy_empty_snackbar">Nothing to copy</string>
     <string name="home_bulk_delete_title">Delete selected notes?</string>
     <string name="home_bulk_delete_body">%1$d notes will be permanently removed from this device.</string>
     <string name="home_move_title">Move to folder</string>
@@ -347,6 +356,8 @@
     <string name="block_tooltip_h1">Large heading — Start a main section</string>
     <string name="block_tooltip_h2">Subheading — Break into clear parts</string>
     <string name="block_tooltip_paragraph">Normal text — Write regular text</string>
+    <string name="block_tooltip_ordered_list">Numbered list — 1. 2. 3. steps</string>
+    <string name="block_tooltip_bullet_list">Bullet list — Quick points</string>
     <string name="block_tooltip_task">Checklist — Tick off tasks</string>
     <string name="block_tooltip_toggle">Collapsible section — Hide long details</string>
     <string name="block_tooltip_quote">Highlight / Quote — Call out key info</string>
@@ -474,6 +485,8 @@
     <string name="reorder_type_h1">H1</string>
     <string name="reorder_type_h2">H2</string>
     <string name="reorder_type_text">Text</string>
+    <string name="reorder_type_olist">1. List</string>
+    <string name="reorder_type_ulist">• List</string>
     <string name="reorder_type_task">Task</string>
     <string name="reorder_type_toggle">Section</string>
     <string name="reorder_type_quote">Quote</string>

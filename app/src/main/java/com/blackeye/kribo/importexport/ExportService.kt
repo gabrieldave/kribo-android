@@ -16,6 +16,7 @@ import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.InlineSpan
 import com.blackeye.kribo.data.blocks.LinkBlock
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
@@ -23,6 +24,7 @@ import com.blackeye.kribo.data.blocks.SpanType
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.data.blocks.ToggleBlock
+import com.blackeye.kribo.data.blocks.orderedListIndex
 import androidx.compose.ui.graphics.toArgb
 import java.io.BufferedOutputStream
 import java.io.File
@@ -78,7 +80,7 @@ class ExportService(
         val title = note.titleText.ifBlank { BlockCodec.derivedTitle(blocks) }
         if (title.isNotBlank()) builder.append("# ").append(title).append("\n\n")
 
-        blocks.forEach { block ->
+        blocks.forEachIndexed { index, block ->
             when (block) {
                 is TitleBlock -> {
                     if (block.text.isNotBlank() && block.text.trim() != title) {
@@ -91,6 +93,14 @@ class ExportService(
 
                 is ParagraphBlock -> if (block.text.isNotBlank()) {
                     builder.append(renderMarkdownSpans(block.text, block.spans)).append("\n\n")
+                }
+
+                is ListBlock -> if (block.text.isNotBlank()) {
+                    val prefix = if (block.ordered) "${orderedListIndex(blocks, index)}. " else "- "
+                    builder.append(prefix)
+                        .append(renderMarkdownSpans(block.text, block.spans))
+                        .append('\n')
+                    if (blocks.getOrNull(index + 1) !is ListBlock) builder.append('\n')
                 }
 
                 is TaskBlock -> {
@@ -287,13 +297,27 @@ class ExportService(
             y += titlePaint.textSize + 12f
         }
 
-        blocks.forEach { block ->
+        blocks.forEachIndexed { index, block ->
             when (block) {
                 is TitleBlock -> if (block.text.trim() != note.title.trim()) {
                     drawParagraph(block.text, titlePaint, spans = block.spans)
                 }
 
                 is ParagraphBlock -> drawParagraph(block.text, bodyPaint, spans = block.spans)
+
+                is ListBlock -> {
+                    val prefix = if (block.ordered) "${orderedListIndex(blocks, index)}. " else "• "
+                    val shift = prefix.length
+                    val drawn = prefix + block.text
+                    drawParagraph(
+                        drawn,
+                        bodyPaint,
+                        indent = 12f,
+                        spans = block.spans.map {
+                            it.copy(start = it.start + shift, end = it.end + shift)
+                        },
+                    )
+                }
 
                 is TaskBlock -> {
                     // Prefix shifts the plain-text span coordinates for the drawn string.

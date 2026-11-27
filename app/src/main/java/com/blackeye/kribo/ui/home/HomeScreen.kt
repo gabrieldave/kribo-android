@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DocumentScanner
@@ -107,6 +108,7 @@ import com.blackeye.kribo.billing.BillingUiState
 import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.export.NoteExportPayload
+import com.blackeye.kribo.data.export.copyTextToClipboard
 import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.common.findActivity
@@ -218,6 +220,9 @@ fun HomeScreen(
     val undoScope = rememberCoroutineScope()
     val undoLabel = stringResource(R.string.action_undo)
     val deletedMessage = stringResource(R.string.note_deleted_snackbar)
+    val copyLabel = stringResource(R.string.app_name)
+    val copiedOneMessage = stringResource(R.string.note_copied_snackbar)
+    val emptyCopyMessage = stringResource(R.string.note_copy_empty_snackbar)
 
     // Deletion waits for the 6 s undo window; Room only loses the note if the user lets it go.
     fun scheduleDelete(noteId: Long) {
@@ -440,6 +445,32 @@ fun HomeScreen(
                     onMove = { showMovePicker = true },
                     onPin = {
                         viewModel.setPinnedFor(selectedIds, !allSelectedPinned)
+                    },
+                    onCopy = {
+                        val orderedIds = selectedNotes.map { it.note.id }.ifEmpty { selectedIds.toList() }
+                        val count = orderedIds.size
+                        undoScope.launch {
+                            val text = viewModel.buildCopyText(orderedIds)
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            if (text.isBlank()) {
+                                snackbarHostState.showSnackbar(
+                                    message = emptyCopyMessage,
+                                    duration = SnackbarDuration.Short,
+                                )
+                            } else {
+                                copyTextToClipboard(context, copyLabel, text)
+                                viewModel.clearSelection()
+                                val message = if (count <= 1) {
+                                    copiedOneMessage
+                                } else {
+                                    context.getString(R.string.notes_copied_snackbar, count)
+                                }
+                                snackbarHostState.showSnackbar(
+                                    message = message,
+                                    duration = SnackbarDuration.Short,
+                                )
+                            }
+                        }
                     },
                     onShareToAi = {
                         undoScope.launch {
@@ -1010,6 +1041,7 @@ internal fun BulkSelectionBar(
     anyPinned: Boolean,
     onMove: () -> Unit,
     onPin: () -> Unit,
+    onCopy: () -> Unit,
     onShareToAi: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -1033,6 +1065,12 @@ internal fun BulkSelectionBar(
             ),
             tag = "home-bulk-pin",
             onClick = onPin,
+        )
+        BulkActionButton(
+            icon = Icons.Rounded.ContentCopy,
+            label = stringResource(R.string.home_bulk_copy),
+            tag = "home-bulk-copy",
+            onClick = onCopy,
         )
         BulkActionButton(
             icon = Icons.Rounded.AutoAwesome,

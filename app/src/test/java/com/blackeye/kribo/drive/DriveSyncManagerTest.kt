@@ -6,7 +6,10 @@ import androidx.test.core.app.ApplicationProvider
 import com.blackeye.kribo.data.KriboDatabase
 import com.blackeye.kribo.data.NoteRepository
 import com.blackeye.kribo.data.blocks.BlockCodec
+import com.blackeye.kribo.data.blocks.InlineSpan
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
+import com.blackeye.kribo.data.blocks.SpanType
 import com.blackeye.kribo.data.seedDefaultFolders
 import com.blackeye.kribo.ocr.AttachmentStore
 import com.blackeye.kribo.security.InMemorySecureStore
@@ -158,6 +161,154 @@ class DriveSyncManagerTest {
         assertNotNull(repository.getNote(id))
     }
 
+    @Test
+    fun syncsIsPinnedFolderStyleAndListBlocksBothWays() = runBlocking {
+        val localFolderId = repository.createFolder(
+            name = "Proyectos",
+            iconKey = "work",
+            colorHex = "#10B981",
+        )!!
+        val noteId = repository.createNote(
+            folderId = localFolderId,
+            blocks = listOf(
+                ListBlock(
+                    text = "Paso uno",
+                    ordered = true,
+                    spans = listOf(InlineSpan(0, 4, SpanType.BOLD)),
+                ),
+                ListBlock(text = "Viñeta", ordered = false),
+            ),
+            title = "Checklist Web",
+        )
+        repository.setPinned(noteId, true)
+
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+
+        val uploadedManifest = json.decodeFromString<DriveManifest>(api.text("sync-manifest.json")!!)
+        val uploadedFolder = uploadedManifest.folders.first { it.name == "Proyectos" }
+        assertEquals("#10B981", uploadedFolder.colorHex)
+        assertEquals("work", uploadedFolder.iconKey)
+
+        val uploadedNote = json.decodeFromString<RemoteNote>(api.text("note-$noteId.json")!!)
+        assertEquals(true, uploadedNote.isPinned)
+        val uploadedBlocks = BlockCodec.decode(uploadedNote.blocks.toString())
+        assertEquals(2, uploadedBlocks.size)
+        assertTrue((uploadedBlocks[0] as ListBlock).ordered)
+        assertFalse((uploadedBlocks[1] as ListBlock).ordered)
+
+        // Now download a remote folder with colorHex/iconKey and a pinned remote note with ListBlock.
+        val webFolder = RemoteFolder(
+            id = 1_764_200_000_001L,
+            name = "Mac",
+            colorHex = "#F59E0B",
+            iconKey = "laptop",
+        )
+        val webNoteId = 1_764_201_234_567L
+        val webBlocks = listOf(
+            ListBlock(id = "web-1", text = "Compilar Debug", ordered = true),
+            ListBlock(id = "web-2", text = "Auditar UI", ordered = true),
+            ListBlock(id = "web-3", text = "Nota suelta", ordered = false),
+        )
+        val webRemoteNote = RemoteNote(
+            id = webNoteId,
+            folderId = webFolder.id,
+            folderName = webFolder.name,
+            title = "Desde Web",
+            updatedAt = 1_764_201_234_999L,
+            isPinned = true,
+            blocks = json.parseToJsonElement(BlockCodec.encode(webBlocks)),
+            plainText = BlockCodec.plainText(webBlocks),
+        )
+        api.seed(
+            "note-$webNoteId.json",
+            json.encodeToString(webRemoteNote).toByteArray(),
+            "application/json",
+        )
+        val updatedManifest = uploadedManifest.copy(
+            folders = uploadedManifest.folders + webFolder,
+            notes = uploadedManifest.notes + RemoteNoteMeta(
+                id = webNoteId,
+                updatedAt = webRemoteNote.updatedAt,
+                deletedAt = null,
+                file = "note-$webNoteId.json",
+            ),
+        )
+        api.seed(
+            "sync-manifest.json",
+            json.encodeToString(updatedManifest).toByteArray(),
+            "application/json",
+        )
+
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+
+        val importedFolder = repository.getAllFolders().first { it.name == "Mac" }
+        assertEquals("#F59E0B", importedFolder.colorHex)
+        assertEquals("laptop", importedFolder.iconKey)
+
+        val importedNote = repository.getNote(webNoteId)!!
+        assertEquals(importedFolder.id, importedNote.folderId)
+        assertEquals(true, importedNote.isPinned)
+        val importedBlocks = BlockCodec.decode(importedNote.blocksJson)
+        assertEquals(3, importedBlocks.size)
+        assertTrue((importedBlocks[0] as ListBlock).ordered)
+        assertEquals("Compilar Debug", (importedBlocks[0] as ListBlock).text)
+        assertFalse((importedBlocks[2] as ListBlock).ordered)
+
+        // Delete the 13-digit Web note locally and verify tombstone persists and prevents resurrection.
+        repository.deleteNote(webNoteId)
+        assertTrue(tombstones.all().containsKey(webNoteId))
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+        assertEquals(null, repository.getNote(webNoteId))
+        val postDeleteManifest = json.decodeFromString<DriveManifest>(api.text("sync-manifest.json")!!)
+        assertNotNull(postDeleteManifest.notes.first { it.id == webNoteId }.deletedAt)
+    }
+
+    @Test
+    fun httpDriveApiClientPaginatesSearchFilesUntilNextPageTokenEnds() = runBlocking {
+        val requestedUrls = mutableListOf<String>()
+        val client = HttpDriveApiClient(
+            tokenProvider = { "test-token" },
+            requestExecutor = { url, _, _, _ ->
+                requestedUrls += url
+                when (requestedUrls.size) {
+                    1 -> """
+                        {
+                          "nextPageToken": "tok+2/==",
+                          "files": [
+                            {"id": "f1", "name": "note-1.json", "mimeType": "application/json"},
+                            {"id": "f2", "name": "note-2.json", "mimeType": "application/json"}
+                          ]
+                        }
+                    """.trimIndent().toByteArray()
+                    2 -> """
+                        {
+                          "nextPageToken": "tok-3",
+                          "files": [
+                            {"id": "f3", "name": "note-3.json", "mimeType": "application/json"}
+                          ]
+                        }
+                    """.trimIndent().toByteArray()
+                    else -> """
+                        {
+                          "files": [
+                            {"id": "f4", "name": "sync-manifest.json", "mimeType": "application/json"}
+                          ]
+                        }
+                    """.trimIndent().toByteArray()
+                }
+            },
+        )
+
+        val files = client.listFiles("root-folder")
+
+        assertEquals(3, requestedUrls.size)
+        assertTrue(requestedUrls[0].contains("fields=nextPageToken,files("))
+        assertFalse(requestedUrls[0].contains("pageToken="))
+        assertTrue(requestedUrls[1].contains("pageToken=tok%2B2%2F%3D%3D"))
+        assertTrue(requestedUrls[2].contains("pageToken=tok-3"))
+        assertEquals(listOf("f1", "f2", "f3", "f4"), files.map { it.id })
+    }
+
     private fun remoteNote(id: Long, updatedAt: Long, text: String): RemoteNote {
         val blocks = BlockCodec.encode(listOf(ParagraphBlock(text = text)))
         return RemoteNote(
@@ -279,7 +430,8 @@ class DriveSyncManagerTest {
         }
 
         fun seed(name: String, bytes: ByteArray, mimeType: String): DriveFile {
-            val id = "seed-${counter++}"
+            val existing = files.values.firstOrNull { it.name == name }
+            val id = existing?.id ?: "seed-${counter++}"
             val file = DriveFile(id, name, mimeType)
             files[id] = file
             contents[id] = bytes

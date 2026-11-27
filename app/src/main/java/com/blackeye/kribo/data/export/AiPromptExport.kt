@@ -9,12 +9,14 @@ import androidx.core.content.FileProvider
 import com.blackeye.kribo.R
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.LinkBlock
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
 import com.blackeye.kribo.data.blocks.TaskBlock
 import com.blackeye.kribo.data.blocks.TitleBlock
 import com.blackeye.kribo.data.blocks.ToggleBlock
+import com.blackeye.kribo.data.blocks.orderedListIndex
 import java.io.File
 
 /**
@@ -89,12 +91,17 @@ private fun labels(isSpanish: Boolean): Triple<String, String, String> = if (isS
 }
 
 private fun renderBlock(
+    blocks: List<NoteBlock>,
+    index: Int,
     block: NoteBlock,
     ocrTexts: Map<Long, String>,
     isSpanish: Boolean,
 ): String? = when (block) {
     is TitleBlock -> block.text.trim().takeIf { it.isNotEmpty() }
     is ParagraphBlock -> block.text.trim().takeIf { it.isNotEmpty() }
+    is ListBlock -> block.text.trim().takeIf { it.isNotEmpty() }?.let { text ->
+        if (block.ordered) "${orderedListIndex(blocks, index)}. $text" else "• $text"
+    }
     is QuoteBlock -> block.text.trim().takeIf { it.isNotEmpty() }?.lineSequence()
         ?.joinToString(separator = "\n") { line -> if (line.isBlank()) ">" else "> $line" }
         ?.takeIf { it.isNotBlank() }
@@ -136,7 +143,7 @@ private fun renderBlocks(
     ocrTexts: Map<Long, String>,
     isSpanish: Boolean,
 ): String = blocks
-    .mapNotNull { renderBlock(it, ocrTexts, isSpanish) }
+    .mapIndexedNotNull { index, block -> renderBlock(blocks, index, block, ocrTexts, isSpanish) }
     .joinToString(separator = "\n\n")
 
 /**

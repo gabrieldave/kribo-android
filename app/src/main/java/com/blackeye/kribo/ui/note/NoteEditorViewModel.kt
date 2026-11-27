@@ -20,6 +20,7 @@ import com.blackeye.kribo.data.blocks.SpanEditor
 import com.blackeye.kribo.data.blocks.SpanType
 import com.blackeye.kribo.data.NoteFont
 import com.blackeye.kribo.data.blocks.Caret
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.domain.editor.BlockReorder
@@ -166,6 +167,7 @@ class NoteEditorViewModel(
     private fun spansOfBlock(block: NoteBlock?, field: BlockField = activeField): List<InlineSpan> = when (block) {
         is com.blackeye.kribo.data.blocks.TitleBlock -> block.spans
         is ParagraphBlock -> block.spans
+        is ListBlock -> block.spans
         is com.blackeye.kribo.data.blocks.TaskBlock -> block.spans
         is com.blackeye.kribo.data.blocks.QuoteBlock -> block.spans
         is com.blackeye.kribo.data.blocks.ToggleBlock ->
@@ -252,6 +254,7 @@ class NoteEditorViewModel(
     private fun textOfBlock(block: NoteBlock, field: BlockField = activeField): String = when (block) {
         is com.blackeye.kribo.data.blocks.TitleBlock -> block.text
         is ParagraphBlock -> block.text
+        is ListBlock -> block.text
         is com.blackeye.kribo.data.blocks.TaskBlock -> block.text
         is com.blackeye.kribo.data.blocks.QuoteBlock -> block.text
         is com.blackeye.kribo.data.blocks.ToggleBlock ->
@@ -264,6 +267,7 @@ class NoteEditorViewModel(
     private fun replaceSpans(block: NoteBlock, spans: List<InlineSpan>): NoteBlock = when (block) {
         is com.blackeye.kribo.data.blocks.TitleBlock -> block.copy(spans = spans)
         is ParagraphBlock -> block.copy(spans = spans)
+        is ListBlock -> block.copy(spans = spans)
         is com.blackeye.kribo.data.blocks.TaskBlock -> block.copy(spans = spans)
         is com.blackeye.kribo.data.blocks.QuoteBlock -> block.copy(spans = spans)
         is com.blackeye.kribo.data.blocks.ToggleBlock ->
@@ -284,6 +288,7 @@ class NoteEditorViewModel(
         when (block) {
             is com.blackeye.kribo.data.blocks.TitleBlock -> block.copy(text = text, spans = spans)
             is ParagraphBlock -> block.copy(text = text, spans = spans)
+            is ListBlock -> block.copy(text = text, spans = spans)
             is com.blackeye.kribo.data.blocks.TaskBlock -> block.copy(text = text, spans = spans)
             is com.blackeye.kribo.data.blocks.QuoteBlock -> block.copy(text = text, spans = spans)
             is com.blackeye.kribo.data.blocks.ToggleBlock ->
@@ -397,6 +402,26 @@ class NoteEditorViewModel(
         scheduleSave()
     }
 
+    /** Enter on an empty list item converts it into a paragraph; otherwise adds the next item. */
+    fun exitListBelow(blockId: String) {
+        val outcome = BlockInsertion.exitBelowList(blocks, blockId)
+        if (outcome.focusBlockId == null) return
+        recordHistory()
+        blocks = outcome.blocks
+        adoptFocus(outcome.focusBlockId)
+        scheduleSave()
+    }
+
+    /** Handles Enter / newline inside a list item while preserving consecutive numbering/bullets. */
+    fun handleListNewline(blockId: String, valueWithNewline: String) {
+        val outcome = BlockInsertion.enterInList(blocks, blockId, valueWithNewline)
+        if (outcome.focusBlockId == null) return
+        recordHistory()
+        blocks = outcome.blocks
+        adoptFocus(outcome.focusBlockId)
+        scheduleSave()
+    }
+
     /**
      * Double Enter inside a quote or a collapsible section: the break(s) are trimmed and an
      * empty paragraph takes focus below it. An empty quote becomes that paragraph in place.
@@ -428,6 +453,7 @@ class NoteEditorViewModel(
             } else when (block) {
                 is com.blackeye.kribo.data.blocks.TitleBlock -> block.copy(text = text)
                 is ParagraphBlock -> block.copy(text = text)
+                is ListBlock -> block.copy(text = text)
                 is com.blackeye.kribo.data.blocks.TaskBlock -> block.copy(text = text)
                 is com.blackeye.kribo.data.blocks.QuoteBlock -> block.copy(text = text)
                 else -> block
@@ -479,6 +505,7 @@ class NoteEditorViewModel(
         is com.blackeye.kribo.data.blocks.TitleBlock ->
             if (block.level <= 1) BlockKind.TITLE_1 else BlockKind.TITLE_2
         is ParagraphBlock -> BlockKind.PARAGRAPH
+        is ListBlock -> if (block.ordered) BlockKind.ORDERED_LIST else BlockKind.BULLET_LIST
         is com.blackeye.kribo.data.blocks.TaskBlock -> BlockKind.TASK
         is com.blackeye.kribo.data.blocks.ToggleBlock -> BlockKind.TOGGLE
         is com.blackeye.kribo.data.blocks.QuoteBlock -> BlockKind.QUOTE

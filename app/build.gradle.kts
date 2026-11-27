@@ -46,8 +46,8 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.0.15"
+        versionCode = 18
+        versionName = "1.0.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -63,6 +63,8 @@ android {
 
     signingConfigs {
         create("release") {
+            enableV2Signing = true
+            enableV3Signing = true
             if (hasReleaseSigning) {
                 storeFile = releaseKeystoreFile
                 storePassword = releaseStorePassword

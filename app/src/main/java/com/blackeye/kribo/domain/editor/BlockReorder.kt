@@ -2,6 +2,7 @@ package com.blackeye.kribo.domain.editor
 
 import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.LinkBlock
+import com.blackeye.kribo.data.blocks.ListBlock
 import com.blackeye.kribo.data.blocks.NoteBlock
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.blocks.QuoteBlock
@@ -77,6 +78,7 @@ object BlockReorder {
     private fun searchableText(block: NoteBlock): List<String> = when (block) {
         is TitleBlock -> listOf(block.text)
         is ParagraphBlock -> listOf(block.text)
+        is ListBlock -> listOf(block.text)
         is QuoteBlock -> listOf(block.text)
         is TaskBlock -> listOf(block.text)
         is ToggleBlock -> listOf(block.title, block.content)
