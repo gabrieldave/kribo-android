@@ -202,8 +202,9 @@ class LayoutOverflowTest {
                 compose.waitForIdle()
                 val toolbarButtons = compose.onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
                     .fetchSemanticsNodes()
-                assertEquals("Expected Aa plus the ten block actions", 11, toolbarButtons.size)
+                assertEquals("Expected Aa, voice mic plus the ten block actions", 12, toolbarButtons.size)
                 assertControlFits("toolbar-format", fontScale, maxHeightDp = 60f)
+                assertControlFits("toolbar-mic", fontScale, maxHeightDp = 60f)
                 assertControlFits("toolbar-h1", fontScale, maxHeightDp = 60f)
                 assertControlFits("toolbar-h2", fontScale, maxHeightDp = 60f)
                 assertControlFits("toolbar-olist", fontScale, maxHeightDp = 60f)
@@ -212,7 +213,7 @@ class LayoutOverflowTest {
                     val bounds = node.boundsInRoot
                     val heightDp = bounds.height / TEST_DENSITY
                     val widthDp = bounds.width / TEST_DENSITY
-                    // The 11-action strip scrolls smoothly at 44dp/cell; off-screen cells clip in
+                    // The 12-action strip scrolls smoothly at 44dp/cell; off-screen cells clip in
                     // semantics bounds, while visible leading cells must never collapse or squish.
                     if (index < 6) {
                         assertTrue("Squished toolbar button at scale $fontScale: $heightDp", heightDp <= 60f)
@@ -233,7 +234,7 @@ class LayoutOverflowTest {
     }
 
     @Test
-    fun editorToolbarScrollsAllElevenActionsAt360DpInBothLanguages() {
+    fun editorToolbarScrollsAllTwelveActionsAt360DpInBothLanguages() {
         // Real footer lane on a 360dp phone: 360 minus AppScreen's 20dp side margins (320dp).
         var config by mutableStateOf(UiConfig(Locale("es"), 1f))
         compose.setContent {
@@ -266,10 +267,11 @@ class LayoutOverflowTest {
                 val actions = compose
                     .onAllNodesWithTag("editor-toolbar-button", useUnmergedTree = true)
                     .fetchSemanticsNodes()
-                assertEquals("Expected Aa plus the ten block actions", 11, actions.size)
+                assertEquals("Expected Aa, voice mic plus the ten block actions", 12, actions.size)
 
                 listOf(
                     "toolbar-format",
+                    "toolbar-mic",
                     "toolbar-h1",
                     "toolbar-h2",
                     "toolbar-olist",
@@ -286,6 +288,45 @@ class LayoutOverflowTest {
                     compose.waitForIdle()
                     assertControlFits(tag, fontScale, maxHeightDp = 60f)
                 }
+            }
+        }
+    }
+
+    @Test
+    fun dictationListeningBannerFits360DpInBothLanguages() {
+        compose.mainClock.autoAdvance = false
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(FOOTER_LANE_DP.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        EditorToolbar(
+                            onAdd = {},
+                            onAttachImage = {},
+                            activeBlock = null,
+                            isDictating = true,
+                            dictationPartial = "Dictando una nota larga de prueba",
+                        )
+                    }
+                }
+            }
+        }
+
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                config = UiConfig(locale, fontScale)
+                compose.mainClock.advanceTimeBy(100L)
+                assertControlFits("dictation-listening-banner", fontScale, maxHeightDp = 72f)
+                assertControlFits("dictation-stop", fontScale, maxHeightDp = 64f)
+                assertControlFits("toolbar-mic", fontScale, maxHeightDp = 60f)
             }
         }
     }

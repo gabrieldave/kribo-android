@@ -1,6 +1,8 @@
 package com.blackeye.kribo.ui.note
 
+import android.Manifest
 import android.content.ClipData
+import android.content.pm.PackageManager
 import com.blackeye.kribo.data.blocks.AccentTone
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -15,7 +17,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -94,6 +100,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.KeyboardHide
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LowPriority
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.MoreVert
@@ -102,6 +109,7 @@ import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.VerticalAlignBottom
@@ -131,6 +139,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -181,6 +190,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -213,7 +223,9 @@ import com.blackeye.kribo.domain.editor.BlockReorder
 import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
+import com.blackeye.kribo.ui.components.AutoSyncStatusIcon
 import com.blackeye.kribo.ui.components.StatusPill
+import com.blackeye.kribo.ui.settings.AppLanguage
 import com.blackeye.kribo.ui.components.TooltipAction
 import com.blackeye.kribo.ui.components.hideKeyboardOnScroll
 import com.blackeye.kribo.ui.components.isImeVisible
@@ -261,6 +273,7 @@ fun NoteEditorScreen(
     }
     val isPro by container.entitlementRepository.isPro.collectAsStateWithLifecycle()
     val billingState by container.billingManager.state.collectAsStateWithLifecycle()
+    val autoSyncState by container.driveAutoSyncScheduler.state.collectAsStateWithLifecycle()
     val titleBlock = blocks.filterIsInstance<TitleBlock>()
         .firstOrNull { it.text.isNotBlank() }
         ?.text
@@ -311,6 +324,80 @@ fun NoteEditorScreen(
     val copyLabel = stringResource(R.string.app_name)
     val copiedNoteMessage = stringResource(R.string.note_copied_snackbar)
     val emptyCopyMessage = stringResource(R.string.note_copy_empty_snackbar)
+    val dictationDeniedMessage = stringResource(R.string.dictation_permission_denied)
+    val dictationUnavailableMessage = stringResource(R.string.dictation_unavailable)
+    val dictationNoMatchMessage = stringResource(R.string.dictation_no_match)
+    val dictationErrorMessage = stringResource(R.string.dictation_error)
+    var dictationState by remember { mutableStateOf(DictationState.IDLE) }
+    var dictationPartial by remember { mutableStateOf("") }
+    var showMicRationale by remember { mutableStateOf(false) }
+
+    val showDictationFeedback: (String) -> Unit = { feedback ->
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(
+                message = feedback,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+
+    val dictator = remember(context) {
+        VoiceDictator(
+            context = context,
+            onPartial = { dictationPartial = it },
+            onFinal = { spoken -> viewModel.insertDictatedText(spoken) },
+            onStateChange = { dictationState = it },
+            onError = { error ->
+                val message = when (error) {
+                    DictationError.UNAVAILABLE -> dictationUnavailableMessage
+                    DictationError.PERMISSION_DENIED -> dictationDeniedMessage
+                    DictationError.NO_MATCH -> dictationNoMatchMessage
+                    DictationError.GENERAL -> dictationErrorMessage
+                }
+                showDictationFeedback(message)
+            },
+        )
+    }
+    DisposableEffect(dictator) {
+        onDispose { dictator.destroy() }
+    }
+
+    val startDictation: () -> Unit = {
+        if (!dictator.isAvailable()) {
+            showDictationFeedback(dictationUnavailableMessage)
+        } else {
+            dictator.start(resolveDictationLanguageTag(AppLanguage.current()))
+        }
+    }
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            startDictation()
+        } else {
+            showDictationFeedback(dictationDeniedMessage)
+        }
+    }
+
+    val onToggleDictation: () -> Unit = {
+        if (dictationState == DictationState.LISTENING) {
+            dictator.stop()
+        } else if (!dictator.isAvailable()) {
+            showDictationFeedback(dictationUnavailableMessage)
+        } else {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                startDictation()
+            } else {
+                showMicRationale = true
+            }
+        }
+    }
     val manualPhotoCount = blocks.count { it is AttachmentBlock && it.manual }
     val requestImage: (Uri) -> Unit = { uri ->
         if (ProLimits.canAttachManualPhoto(manualPhotoCount, isPro)) {
@@ -356,7 +443,10 @@ fun NoteEditorScreen(
         cameraLauncher.launch(uri)
     }
 
-    val exit: () -> Unit = { viewModel.flushAndExit(onBack) }
+    val exit: () -> Unit = {
+        dictator.cancel()
+        viewModel.flushAndExit(onBack)
+    }
     val leaveReorder: () -> Unit = {
         keyboardController?.hide()
         focusManager.clearFocus()
@@ -681,6 +771,9 @@ fun NoteEditorScreen(
                         activeStyles = viewModel.activeTypingStyles,
                         formatMode = formatMode,
                         onToggleFormatMode = { formatMode = !formatMode },
+                        isDictating = dictationState == DictationState.LISTENING,
+                        dictationPartial = dictationPartial,
+                        onToggleDictation = onToggleDictation,
                     )
                 }
             }
@@ -738,10 +831,20 @@ fun NoteEditorScreen(
             ) {
                 item(key = "editor-folder-chip") {
                     Column {
-                        FolderChipButton(
-                            label = folderLabel,
-                            onClick = { showFolderPicker = true },
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            FolderChipButton(
+                                label = folderLabel,
+                                onClick = { showFolderPicker = true },
+                            )
+                            Spacer(Modifier.weight(1f))
+                            AutoSyncStatusIcon(
+                                state = autoSyncState,
+                                modifier = Modifier.testTag("editor-auto-sync-indicator"),
+                            )
+                        }
                         Spacer(Modifier.height(6.dp))
                     }
                 }
@@ -1071,6 +1174,25 @@ fun NoteEditorScreen(
             )
         }
     }
+
+    if (showMicRationale) {
+        AppModal(
+            onDismissRequest = { showMicRationale = false },
+            title = stringResource(R.string.dictation_permission_title),
+            dismissLabel = stringResource(R.string.action_cancel),
+            confirmLabel = stringResource(R.string.dictation_permission_allow),
+            onConfirm = {
+                showMicRationale = false
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            },
+        ) {
+            Text(
+                text = stringResource(R.string.dictation_permission_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable
@@ -1162,94 +1284,173 @@ internal fun EditorToolbar(
     activeStyles: ActiveStyles = ActiveStyles(),
     formatMode: Boolean = false,
     onToggleFormatMode: () -> Unit = {},
+    isDictating: Boolean = false,
+    dictationPartial: String = "",
+    onToggleDictation: () -> Unit = {},
 ) {
     val activeTitleLevel = (activeBlock as? TitleBlock)?.level
     val keyboard = LocalSoftwareKeyboardController.current
     val imeVisible = isImeVisible()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .testTag("editor-toolbar"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BoxWithConstraints(modifier = Modifier.weight(1f)) {
-            // 11 actions (Aa + 10 block types): smooth horizontal scroll at 44.dp per cell with
-            // a right-edge fade on phones, or evenly distributed when the lane fits all 11 cells.
-            val scrollable = maxWidth < TOOLBAR_BLOCK_SCROLL_MIN_LANE_WIDTH ||
-                LocalDensity.current.fontScale >= TOOLBAR_LARGE_FONT_SCALE
-            if (scrollable) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ToolbarActions(
-                        activeTitleLevel = activeTitleLevel,
-                        activeBlock = activeBlock,
-                        onAdd = onAdd,
-                        onAttachImage = onAttachImage,
-                        scrollable = true,
-                        activeStyles = activeStyles,
-                        formatMode = formatMode,
-                        onToggleFormatMode = onToggleFormatMode,
-                    )
-                    Spacer(Modifier.width(TOOLBAR_EDGE_FADE_WIDTH))
-                }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(TOOLBAR_EDGE_FADE_WIDTH)
-                        .height(TOOLBAR_CELL_HEIGHT)
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(Color.Transparent, MaterialTheme.colorScheme.background),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        AnimatedVisibility(visible = isDictating) {
+            DictationListeningBanner(
+                partialText = dictationPartial,
+                onStop = onToggleDictation,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
+                .testTag("editor-toolbar"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                // 12 actions (Aa + voice mic + 10 block types): smooth horizontal scroll at 44.dp
+                // per cell with a right-edge fade on phones, or evenly distributed on wide lanes.
+                val scrollable = maxWidth < TOOLBAR_BLOCK_SCROLL_MIN_LANE_WIDTH ||
+                    LocalDensity.current.fontScale >= TOOLBAR_LARGE_FONT_SCALE
+                if (scrollable) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ToolbarActions(
+                            activeTitleLevel = activeTitleLevel,
+                            activeBlock = activeBlock,
+                            onAdd = onAdd,
+                            onAttachImage = onAttachImage,
+                            scrollable = true,
+                            activeStyles = activeStyles,
+                            formatMode = formatMode,
+                            onToggleFormatMode = onToggleFormatMode,
+                            isDictating = isDictating,
+                            onToggleDictation = onToggleDictation,
+                        )
+                        Spacer(Modifier.width(TOOLBAR_EDGE_FADE_WIDTH))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .width(TOOLBAR_EDGE_FADE_WIDTH)
+                            .height(TOOLBAR_CELL_HEIGHT)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color.Transparent, MaterialTheme.colorScheme.background),
+                                ),
                             ),
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            0.dp,
+                            Alignment.CenterHorizontally,
                         ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ToolbarActions(
+                            activeTitleLevel = activeTitleLevel,
+                            activeBlock = activeBlock,
+                            onAdd = onAdd,
+                            onAttachImage = onAttachImage,
+                            scrollable = false,
+                            activeStyles = activeStyles,
+                            formatMode = formatMode,
+                            onToggleFormatMode = onToggleFormatMode,
+                            isDictating = isDictating,
+                            onToggleDictation = onToggleDictation,
+                        )
+                    }
+                }
+            }
+
+            // The IME button lives outside the scroll area: it is always anchored on the right.
+            if (imeVisible) {
+                VerticalDivider(
+                    modifier = Modifier.height(26.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                 )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(
-                        0.dp,
-                        Alignment.CenterHorizontally,
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
+                TooltipAction(
+                    tooltip = stringResource(R.string.cd_hide_keyboard),
+                    onClick = { keyboard?.hide() },
+                    modifier = Modifier
+                        .width(TOOLBAR_IME_BUTTON_WIDTH)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .testTag("editor-hide-keyboard"),
                 ) {
-                    ToolbarActions(
-                        activeTitleLevel = activeTitleLevel,
-                        activeBlock = activeBlock,
-                        onAdd = onAdd,
-                        onAttachImage = onAttachImage,
-                        scrollable = false,
-                        activeStyles = activeStyles,
-                        formatMode = formatMode,
-                        onToggleFormatMode = onToggleFormatMode,
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardHide,
+                        contentDescription = stringResource(R.string.cd_hide_keyboard),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
         }
+    }
+}
 
-        // The IME button lives outside the scroll area: it is always anchored on the right.
-        if (imeVisible) {
-            VerticalDivider(
-                modifier = Modifier.height(26.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+@Composable
+private fun DictationListeningBanner(
+    partialText: String,
+    onStop: () -> Unit,
+) {
+    val transition = rememberInfiniteTransition(label = "dictation-pulse")
+    val pulseAlpha by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dictation-alpha",
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .testTag("dictation-listening-banner"),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Mic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha),
+                modifier = Modifier.size(18.dp),
             )
-            TooltipAction(
-                tooltip = stringResource(R.string.cd_hide_keyboard),
-                onClick = { keyboard?.hide() },
+            Text(
+                text = partialText.ifBlank { stringResource(R.string.dictation_listening) },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(
+                onClick = onStop,
                 modifier = Modifier
-                    .width(TOOLBAR_IME_BUTTON_WIDTH)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .testTag("editor-hide-keyboard"),
+                    .size(48.dp)
+                    .testTag("dictation-stop"),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.KeyboardHide,
-                    contentDescription = stringResource(R.string.cd_hide_keyboard),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    imageVector = Icons.Rounded.StopCircle,
+                    contentDescription = stringResource(R.string.dictation_stop),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -1258,8 +1459,9 @@ internal fun EditorToolbar(
 }
 
 /**
- * The seven block actions. When the lane is wide enough each one takes an equal share
- * (`weight`); otherwise they keep a fixed, still tappable cell inside a scroll row.
+ * The twelve editor toolbar actions (Aa + voice mic + ten block types). When the lane is wide
+ * enough each one takes an equal share (`weight`); otherwise they keep a fixed, tappable cell
+ * inside a scroll row.
  */
 @Composable
 private fun RowScope.ToolbarActions(
@@ -1271,6 +1473,8 @@ private fun RowScope.ToolbarActions(
     activeStyles: ActiveStyles = ActiveStyles(),
     formatMode: Boolean = false,
     onToggleFormatMode: () -> Unit = {},
+    isDictating: Boolean = false,
+    onToggleDictation: () -> Unit = {},
 ) {
     // A fresh modifier per action: reusing one `weight` instance across children would make a
     // single cell swallow the whole row.
@@ -1298,6 +1502,14 @@ private fun RowScope.ToolbarActions(
         ),
         modifier = cell("toolbar-format"),
     ) { onToggleFormatMode() }
+    ToolbarButton(
+        icon = Icons.Rounded.Mic,
+        descriptionRes = R.string.cd_voice_dictation,
+        tooltipRes = R.string.block_tooltip_dictation,
+        active = isDictating,
+        pulsing = isDictating,
+        modifier = cell("toolbar-mic"),
+    ) { onToggleDictation() }
     ToolbarTextButton(
         label = stringResource(R.string.editor_h1),
         descriptionRes = R.string.cd_block_title,
@@ -1835,18 +2047,39 @@ private fun ToolbarButton(
     descriptionRes: Int,
     tooltipRes: Int,
     active: Boolean = false,
+    pulsing: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val contentColor = if (active) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant
+    val pulseAlpha = if (pulsing) {
+        val transition = rememberInfiniteTransition(label = "toolbar-pulse")
+        transition.animateFloat(
+            initialValue = 0.12f,
+            targetValue = 0.28f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 650),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "toolbar-pulse-alpha",
+        ).value
+    } else if (active) {
+        0.14f
+    } else {
+        0f
+    }
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         TooltipAction(
             tooltip = stringResource(tooltipRes),
             onClick = onClick,
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp)),
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    if (pulseAlpha > 0f) MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                    else Color.Transparent,
+                ),
         ) {
             Box(
                 modifier = Modifier
@@ -2411,7 +2644,13 @@ private fun BlockTextField(
 
     LaunchedEffect(value) {
         if (fieldValue.text != value) {
-            val cursor = fieldValue.selection.start.coerceIn(0, value.length)
+            val wasAtEnd = fieldValue.selection.collapsed &&
+                fieldValue.selection.start == fieldValue.text.length
+            val cursor = if (wasAtEnd && value.startsWith(fieldValue.text)) {
+                value.length
+            } else {
+                fieldValue.selection.start.coerceIn(0, value.length)
+            }
             fieldValue = TextFieldValue(value, TextRange(cursor))
         }
     }
@@ -3815,23 +4054,23 @@ private fun rememberAttachmentBitmap(path: String?, maxLongSide: Int): Bitmap? {
     return bitmap
 }
 
-private fun decodeSampled(path: String, maxLongSide: Int): Bitmap? {
+private fun decodeSampled(path: String, maxLongSide: Int): Bitmap? = runCatching {
     val file = File(path)
-    if (!file.isFile) return null
+    if (!file.isFile) return@runCatching null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
     var sample = 1
     val longest = max(bounds.outWidth, bounds.outHeight)
     while (longest / (sample * 2) >= maxLongSide) sample *= 2
-    return BitmapFactory.decodeFile(
+    BitmapFactory.decodeFile(
         path,
         BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         },
     )
-}
+}.getOrNull()
 
 private fun shareFile(context: Context, file: File, mimeType: String) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -3858,11 +4097,11 @@ private const val DELETE_UNDO_WINDOW_MS = 6_000L
 /** Frames a freshly created block may spend waiting for LazyColumn to place it. */
 private const val FOCUS_ATTEMPTS = 4
 
-/** Ten block actions in the editor footer (plus Aa = 11 total). */
+/** Ten block actions in the editor footer (plus Aa and voice mic = 12 total). */
 private const val BLOCK_ACTION_COUNT = 10
 
-/** Below this lane width (11 × 44.dp) the block toolbar uses a smooth horizontal scroll strip. */
-private val TOOLBAR_BLOCK_SCROLL_MIN_LANE_WIDTH = 484.dp
+/** Below this lane width (12 × 44.dp) the block toolbar uses a smooth horizontal scroll strip. */
+private val TOOLBAR_BLOCK_SCROLL_MIN_LANE_WIDTH = 528.dp
 
 /** Below this lane width the 9-action format bar switches to a scrollable strip. */
 private val TOOLBAR_SCROLL_MIN_LANE_WIDTH = 288.dp

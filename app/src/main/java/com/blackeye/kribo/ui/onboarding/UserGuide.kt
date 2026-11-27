@@ -104,6 +104,7 @@ enum class GuideTopic(
             R.string.guide_topic_editor_item_1,
             R.string.guide_topic_editor_item_2,
             R.string.guide_topic_editor_item_3,
+            R.string.guide_topic_editor_item_4,
         ),
         icon = Icons.Rounded.Edit,
     ),

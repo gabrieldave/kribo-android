@@ -446,6 +446,75 @@ class NoteEditorViewModel(
         scheduleSave()
     }
 
+    /**
+     * Native voice dictation (#44): inserts [spoken] at the caret of the focused editable block
+     * (with clean spacing and preserved inline spans), or creates/reuses a paragraph block when
+     * no editable block had focus. Records one Undo step and triggers save + Drive auto-sync.
+     */
+    fun insertDictatedText(spoken: String) {
+        val clean = spoken.trim()
+        if (clean.isEmpty()) return
+
+        val focused = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
+        if (focused != null && isEditableTextBlock(focused)) {
+            recordHistory()
+            val oldText = textOfBlock(focused, activeField)
+            val caret = activeCaret
+            val start = (caret?.start ?: oldText.length).coerceIn(0, oldText.length)
+            val end = (caret?.end ?: oldText.length).coerceIn(start, oldText.length)
+            val prefix = oldText.substring(0, start)
+            val suffix = oldText.substring(end)
+            val spaceBefore = if (prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
+            val spaceAfter = if (suffix.isNotEmpty() && !suffix.first().isWhitespace()) " " else ""
+            val inserted = spaceBefore + clean + spaceAfter
+            val newText = prefix + inserted + suffix
+            val adjusted = SpanEditor.adjustSpansOnEdit(
+                oldText = oldText,
+                newText = newText,
+                spans = spansOfBlock(focused, activeField),
+                active = activeTypingStyles,
+            )
+            blocks = blocks.map { current ->
+                if (current.id != focused.id) {
+                    current
+                } else {
+                    replaceTextSpans(current, newText, adjusted, activeField)
+                }
+            }
+            val newPos = prefix.length + spaceBefore.length + clean.length
+            activeCaret = Caret(newPos, newPos)
+            scheduleSave(immediate = true)
+            return
+        }
+
+        recordHistory()
+        val trailing = blocks.lastOrNull()
+        if (trailing is ParagraphBlock && trailing.text.isBlank()) {
+            blocks = blocks.dropLast(1) + trailing.copy(text = clean)
+            focusedBlockId = trailing.id
+            activeField = BlockField.MAIN
+            activeCaret = Caret(clean.length, clean.length)
+        } else {
+            val paragraph = ParagraphBlock(text = clean)
+            blocks = blocks + paragraph
+            adoptFocus(paragraph.id)
+            activeField = BlockField.MAIN
+            activeCaret = Caret(clean.length, clean.length)
+        }
+        scheduleSave(immediate = true)
+    }
+
+    private fun isEditableTextBlock(block: NoteBlock): Boolean = when (block) {
+        is com.blackeye.kribo.data.blocks.TitleBlock,
+        is ParagraphBlock,
+        is ListBlock,
+        is com.blackeye.kribo.data.blocks.TaskBlock,
+        is com.blackeye.kribo.data.blocks.QuoteBlock,
+        is com.blackeye.kribo.data.blocks.ToggleBlock,
+        -> true
+        else -> false
+    }
+
     private fun updateCurrentText(blockId: String, text: String) {
         blocks = blocks.map { block ->
             if (block.id != blockId) {

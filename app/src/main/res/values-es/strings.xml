@@ -222,7 +222,7 @@
 
     <string name="paywall_reason_drive">Sincroniza tus notas con Google Drive</string>
     <string name="drive_sync_title">Google Drive</string>
-    <string name="drive_privacy_body">Kribo solo accede a su propia carpeta privada en tu Drive. Nunca ve tus demás archivos.</string>
+    <string name="drive_privacy_body">Kribo funciona 100% sin internet y sin servidores propios. El respaldo en Google Drive es opcional y solo accede a su propia carpeta privada en tu Drive.</string>
     <string name="drive_account_google">Google Drive</string>
     <string name="drive_connect">Conectar Google Drive</string>
     <string name="drive_connected_account">Cuenta conectada</string>
@@ -232,7 +232,7 @@
     <string name="drive_sync_now">Sincronizar ahora</string>
     <string name="drive_syncing">Sincronizando…</string>
     <string name="drive_auto_sync">Sincronización automática</string>
-    <string name="drive_auto_sync_body">Cada 6 horas en segundo plano</string>
+    <string name="drive_auto_sync_body">Tras editar y cada 6 h como respaldo</string>
     <string name="drive_wifi_only">Respaldar solo con Wi-Fi</string>
     <string name="drive_wifi_only_body">Nunca usa datos móviles</string>
     <string name="drive_disconnect">Desconectar</string>
@@ -246,7 +246,7 @@
     <string name="drive_message_unknown">No se pudo sincronizar. Inténtalo de nuevo.</string>
 
     <string name="kribo_web_title">Kribo Web (Mac y Windows)</string>
-    <string name="kribo_web_card_body">Al sincronizar con Google Drive puedes ver y editar tus notas en tu computadora en %1$s e instalarla como app.</string>
+    <string name="kribo_web_card_body">Opcional: con la sincronización de Google Drive activa, ve y edita tus notas en Mac o Windows en %1$s e instálala como app capaz de trabajar sin conexión — directo a tu Drive, sin servidores de terceros.</string>
     <string name="kribo_web_open_cd">Abrir Kribo Web en el navegador</string>
     <string name="kribo_web_copy_link">Copiar enlace</string>
     <string name="kribo_web_copied">Enlace copiado</string>
@@ -353,7 +353,7 @@
     <string name="manual_section_sync">Sincronización y transferencia</string>
     <string name="manual_sync_drive">Google Drive guarda una copia en la carpeta privada de Kribo</string>
     <string name="manual_sync_wifi">La transferencia por Wi-Fi abre una página local en cualquier navegador</string>
-    <string name="manual_sync_privacy">Nada sale del teléfono salvo que conectes Google Drive tú mismo</string>
+    <string name="manual_sync_privacy">Kribo funciona 100% sin internet y sin servidores propios; el respaldo en Drive es opcional y vive solo en tu propio Google Drive</string>
 
     <string name="cd_help">Abrir ayuda</string>
     <string name="cd_hide_keyboard">Ocultar teclado</string>
@@ -384,13 +384,13 @@
     <string name="guide_topic_welcome_intro">Notas, escaneos y búsqueda, todo en tu dispositivo. Kribo no necesita cuenta ni conexión para funcionar.</string>
     <string name="guide_topic_welcome_item_1">Notas ilimitadas con checklists, desplegables y citas</string>
     <string name="guide_topic_welcome_item_2">Escáner OCR local para recibos, libros y capturas</string>
-    <string name="guide_topic_welcome_item_3">100% offline: tus notas no salen del teléfono</string>
+    <string name="guide_topic_welcome_item_3">100% offline por defecto y sin servidores propios — el respaldo en Google Drive es opcional</string>
     <string name="guide_topic_home_title">Pantalla principal</string>
     <string name="guide_topic_home_intro">Todo lo que necesitas para encontrar y organizar tus notas.</string>
     <string name="guide_topic_home_item_1">Buscador instantáneo por título, texto y OCR</string>
     <string name="guide_topic_home_item_2">Carpetas y vistas en Lista o Tarjetas</string>
     <string name="guide_topic_home_item_3">Mantén presionada una nota para selección múltiple: Mover, Fijar y Eliminar</string>
-    <string name="guide_topic_editor_title">Los 8 bloques del editor</string>
+    <string name="guide_topic_editor_title">Bloques del editor y dictado por voz</string>
     <string name="guide_topic_editor_intro">Cada botón crea un bloque. Mantén presionado para ver su nombre y un ejemplo real.</string>
     <string name="guide_topic_ocr_title">Escáner OCR: bien vs. evitar</string>
     <string name="guide_topic_ocr_intro">Para que el texto salga nítido y buscable.</string>
@@ -405,13 +405,13 @@
     <string name="guide_topic_wifi_step_3">El navegador puede mostrar «No seguro»: es una conexión local directa. Úsala solo en una Wi-Fi de confianza</string>
     <string name="guide_topic_wifi_step_4">La sesión termina al cerrar la pantalla o desactivar el interruptor</string>
     <string name="guide_topic_drive_title">Respaldo en Google Drive</string>
-    <string name="guide_topic_drive_intro">Función PRO: una copia privada en tu propia cuenta, opcional y bajo tu control.</string>
+    <string name="guide_topic_drive_intro">Función PRO: Kribo funciona 100% sin internet y sin servidores propios. Respaldar en tu propio Google Drive es opcional y siempre bajo tu control.</string>
     <string name="guide_topic_drive_sync_now">Sincronizar ahora sube los cambios pendientes a la carpeta «Mi unidad / Kribo»</string>
-    <string name="guide_topic_drive_automatic">Automática sincroniza cada 6 horas en segundo plano</string>
+    <string name="guide_topic_drive_automatic">La sincronización automática sube tus cambios en silencio segundos después de editar, más un respaldo en segundo plano cada 6 horas</string>
     <string name="guide_topic_drive_wifi_only">Solo con Wi-Fi evita usar datos móviles</string>
     <string name="guide_topic_drive_restore">Para restaurar, conecta la misma cuenta y toca Sincronizar ahora</string>
-    <string name="guide_topic_drive_privacy">Kribo solo ve su propia carpeta, nunca el resto de tu Drive</string>
-    <string name="guide_topic_drive_web">Abre kribo.iareal.net/app en Mac o Windows con la misma cuenta de Google para acceder a tus notas e instalarla como app</string>
+    <string name="guide_topic_drive_privacy">Directo entre tu dispositivo y tu Google Drive — sin servidores de terceros, y Kribo nunca ve el resto de tu Drive</string>
+    <string name="guide_topic_drive_web">Abre kribo.iareal.net/app en Mac o Windows con la misma cuenta de Google para acceder a tus notas sincronizadas sin servidores propios e instalarla como app</string>
     <string name="guide_topic_export_title">Exportar a PDF</string>
     <string name="guide_topic_export_intro">Comparte una nota como documento listo para imprimir o archivar.</string>
     <string name="guide_topic_export_item_1">El nombre del archivo usa el título de la nota</string>
@@ -471,8 +471,8 @@
     <string name="cd_edit_link">Editar enlace</string>
     <string name="cd_link_done">Listo</string>
     <string name="settings_dictation_title">Dictado por voz</string>
-    <string name="settings_dictation_subtitle">Escribe notas hablando sin depender del teclado</string>
-    <string name="settings_dictation_badge">Próximamente</string>
+    <string name="settings_dictation_subtitle">Disponible en la barra del editor usando el reconocimiento nativo de Android</string>
+    <string name="settings_dictation_badge">Activo</string>
     <string name="guide_topic_export_item_5">Envía una o varias notas a ChatGPT, Gemini o Claude como .txt con un prompt listo</string>
     <string name="reorder_title">Reordenar bloques</string>
     <string name="reorder_done">Listo</string>
@@ -502,4 +502,19 @@
     <string name="reorder_type_quote">Cita</string>
     <string name="reorder_type_link">Enlace</string>
     <string name="reorder_type_image">Imagen</string>
+
+    <string name="cd_auto_sync_syncing">Sincronizando con Google Drive</string>
+    <string name="cd_auto_sync_synced">Sincronizado con Google Drive</string>
+    <string name="cd_voice_dictation">Dictado por voz</string>
+    <string name="block_tooltip_dictation">Dictado por voz — Habla para escribir en tu nota</string>
+    <string name="dictation_listening">Escuchando… habla ahora</string>
+    <string name="dictation_stop">Detener dictado</string>
+    <string name="dictation_permission_title">Permiso de micrófono</string>
+    <string name="dictation_permission_body">Kribo usa el reconocimiento de voz nativo de Android para convertir tu voz en texto dentro de esta nota. Sin servidores de Kribo.</string>
+    <string name="dictation_permission_allow">Permitir micrófono</string>
+    <string name="dictation_permission_denied">Permiso de micrófono denegado. Actívalo en los ajustes del sistema para dictar.</string>
+    <string name="dictation_unavailable">El reconocimiento de voz no está disponible en este dispositivo.</string>
+    <string name="dictation_no_match">No se detectó voz. Inténtalo de nuevo.</string>
+    <string name="dictation_error">No se pudo completar el dictado por voz. Inténtalo de nuevo.</string>
+    <string name="guide_topic_editor_item_4">Toca el botón de micrófono en la barra para dictar texto con el reconocimiento de voz nativo de Android en tu idioma.</string>
 </resources>

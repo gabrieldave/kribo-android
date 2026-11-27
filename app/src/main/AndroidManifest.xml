@@ -2,9 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Play Billing requires network access. No other network capability is used. -->
+    <!-- Play Billing and optional Google Drive sync require network access. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Requested at runtime ONLY when the user taps voice dictation in the editor. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Required on API 30+ so SpeechRecognizer.isRecognitionAvailable sees the platform service. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".KriboApplication"

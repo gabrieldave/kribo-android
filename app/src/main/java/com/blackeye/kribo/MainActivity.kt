@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ui.KriboApp
@@ -49,6 +50,12 @@ class MainActivity : AppCompatActivity() {
                                 container.uiPreferences.setTheme(AppTheme.OBSIDIAN)
                             }
                         }
+                        LaunchedEffect(isPro) {
+                            if (isPro) {
+                                withFrameNanos { }
+                                container.driveAutoSyncScheduler.onAppForeground()
+                            }
+                        }
                         val billingState by container.billingManager.state.collectAsStateWithLifecycle()
                         KriboApp(
                             container = container,
@@ -70,9 +77,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (!(application as KriboApplication).isSignatureAuthorized) return
-        // Defer Billing until after the first frame so cold start stays under 250 ms.
+        // Defer Billing and Drive foreground sync until after the first frame so cold start stays under 250 ms.
         Choreographer.getInstance().postFrameCallback {
             container.entitlementRepository.refresh()
+            container.driveAutoSyncScheduler.onAppForeground()
         }
     }
 }

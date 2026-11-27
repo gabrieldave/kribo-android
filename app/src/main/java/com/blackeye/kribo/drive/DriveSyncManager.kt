@@ -62,7 +62,7 @@ class DriveSyncManager(
         auth.saveRootFolder(root.id)
 
         val files = api.listFiles(root.id)
-        val filesByName = files.associateBy { it.name }
+        val filesByName = files.associateBy { it.name }.toMutableMap()
         val manifestFile = filesByName[MANIFEST_NAME]
         val manifest = if (manifestFile == null) {
             DriveManifest()
@@ -73,18 +73,37 @@ class DriveSyncManager(
         }
 
         val localFoldersBefore = repository.getAllFolders()
-        val folderIdByLowerName = localFoldersBefore
-            .associate { it.name.lowercase(Locale.ROOT) to it.id }
-            .toMutableMap()
+        val previouslySyncedFolders = tombstones.syncedFolderIds()
+        val locallyDeletedFolders = tombstones.deletedFolderIds()
         val remoteFolderToLocal = mutableMapOf<Long, Long>()
+        val remoteFolderLocalIds = mutableSetOf<Long>()
         manifest.folders.forEach { remote ->
-            val localId = repository.findOrCreateFolder(
+            if (remote.id != DEFAULT_FOLDER_GENERAL && remote.id in locallyDeletedFolders) {
+                return@forEach
+            }
+            val localId = repository.upsertSyncedFolder(
+                remoteId = remote.id,
                 name = remote.name,
                 colorHex = remote.colorHex,
                 iconKey = remote.iconKey,
             )
-            folderIdByLowerName[remote.name.lowercase(Locale.ROOT)] = localId
             remoteFolderToLocal[remote.id] = localId
+            remoteFolderLocalIds += localId
+        }
+        val notesInDeletedFolders = mutableSetOf<Long>()
+        if (manifestFile != null && manifest.folders.isNotEmpty() && previouslySyncedFolders.isNotEmpty()) {
+            val existingNotesBeforeFolderDelete = repository.getAllNotes()
+            localFoldersBefore.forEach { localFolder ->
+                if (localFolder.id != DEFAULT_FOLDER_GENERAL &&
+                    localFolder.id in previouslySyncedFolders &&
+                    localFolder.id !in remoteFolderLocalIds
+                ) {
+                    existingNotesBeforeFolderDelete
+                        .filter { it.folderId == localFolder.id }
+                        .forEach { notesInDeletedFolders += it.id }
+                    repository.deleteSyncedFolder(localFolder.id)
+                }
+            }
         }
         val folders = repository.getAllFolders()
         val folderById = folders.associateBy { it.id }
@@ -184,7 +203,7 @@ class DriveSyncManager(
                     val remoteUpdatedAt = remote?.updatedAt ?: 0L
                     when {
                         remoteDeletedAt != null && remoteDeletedAt >= local.updatedAt -> {
-                            repository.deleteNote(id)
+                            repository.deleteSyncedNote(id)
                             tombstones.mark(id, remoteDeletedAt)
                             localTombstones[id] = remoteDeletedAt
                             localNotes.remove(id)
@@ -216,6 +235,32 @@ class DriveSyncManager(
                             }
                         }
 
+                        remote != null &&
+                            remote.deletedAt == null &&
+                            remoteUpdatedAt == local.updatedAt &&
+                            remoteFile != null &&
+                            id !in notesInDeletedFolders &&
+                            !hasPendingAttachmentUpload(local.id, filesByName, remoteAttachments) -> {
+                            newNoteMeta[id] = RemoteNoteMeta(
+                                id = id,
+                                updatedAt = local.updatedAt,
+                                deletedAt = null,
+                                file = remote.file ?: "note-$id.json",
+                            )
+                            repository.getAttachments(local.id).forEach { att ->
+                                val file = File(att.filePath)
+                                if (file.isFile) {
+                                    newAttachments[att.id] = RemoteAttachmentMeta(
+                                        id = att.id,
+                                        sha256 = sha256(file),
+                                        mimeType = att.mimeType,
+                                        fileName = file.name,
+                                        noteId = local.id,
+                                    )
+                                }
+                            }
+                        }
+
                         else -> {
                             val uploaded = uploadLocalNote(
                                 note = local,
@@ -239,9 +284,10 @@ class DriveSyncManager(
             if (meta.noteId in localNotes.keys) newAttachments.putIfAbsent(meta.id, meta)
         }
 
+        val finalFolders = repository.getAllFolders()
         val manifestOut = DriveManifest(
             schemaVersion = 1,
-            folders = repository.getAllFolders().map {
+            folders = finalFolders.map {
                 RemoteFolder(
                     id = it.id,
                     name = it.name,
@@ -252,29 +298,35 @@ class DriveSyncManager(
             notes = newNoteMeta.values.sortedBy { it.id },
             attachments = newAttachments.mapKeys { it.key.toString() },
         )
-        val manifestBytes = json.encodeToString(manifestOut).toByteArray(Charsets.UTF_8)
-        if (manifestFile == null) {
-            api.createFile(
-                root.id,
-                MANIFEST_NAME,
-                "application/json",
-                manifestBytes,
-                mapOf("kriboSchema" to "1"),
-            )
-        } else {
-            api.updateFile(
-                manifestFile.id,
-                MANIFEST_NAME,
-                "application/json",
-                manifestBytes,
-                mapOf("kriboSchema" to "1"),
-            )
+        if (manifestFile == null || manifestOut != manifest) {
+            val manifestBytes = json.encodeToString(manifestOut).toByteArray(Charsets.UTF_8)
+            if (manifestFile == null) {
+                api.createFile(
+                    root.id,
+                    MANIFEST_NAME,
+                    "application/json",
+                    manifestBytes,
+                    mapOf("kriboSchema" to "1"),
+                )
+            } else {
+                api.updateFile(
+                    manifestFile.id,
+                    MANIFEST_NAME,
+                    "application/json",
+                    manifestBytes,
+                    mapOf("kriboSchema" to "1"),
+                )
+            }
         }
 
+        tombstones.saveSyncedFolderIds(finalFolders.map { it.id }.toSet())
+        tombstones.clearDeletedFolders()
+
         val now = System.currentTimeMillis()
-        auth.saveLastSync(now, repository.getAllNotes().size, newAttachments.size)
+        val finalNoteCount = repository.getAllNotes().size
+        auth.saveLastSync(now, finalNoteCount, newAttachments.size)
         return DriveSyncResult.Success(
-            notes = repository.getAllNotes().size,
+            notes = finalNoteCount,
             attachments = newAttachments.size,
         )
     }
@@ -318,60 +370,139 @@ class DriveSyncManager(
         )
 
         val existingAttachments = repository.getAttachments(remote.id)
+        val existingByHash = existingAttachments.mapNotNull { att ->
+            val file = File(att.filePath)
+            if (file.isFile) sha256(file) to att else null
+        }.toMap()
         val existingByName = existingAttachments.associateBy {
             it.filePath.substringAfterLast('/')
         }
+        val attachmentBlocks = existingBlocks.filterIsInstance<AttachmentBlock>()
         val remoteToLocal = mutableMapOf<Long, Long>()
+        val fileNameToLocal = mutableMapOf<String, Long>()
+        var downloadedAny = false
+
         remote.attachments.forEach { ref ->
-            val existing = existingByName[ref.fileName]
-                ?.takeIf { sha256(File(it.filePath)) == ref.sha256 }
-            val localId = if (existing != null) {
-                existing.id
+            val existing = ref.sha256.takeIf { it.isNotBlank() }?.let(existingByHash::get)
+                ?: existingByName[ref.fileName]?.takeIf { att ->
+                    val file = File(att.filePath)
+                    file.isFile && (ref.sha256.isBlank() || sha256(file) == ref.sha256)
+                }
+            val safeMime = ref.mimeType.ifBlank { "image/jpeg" }
+            val fallbackExt = extensionForMime(safeMime)
+            val safeFileName = ref.fileName.ifBlank { "att-${ref.id}.$fallbackExt" }
+            val localId: Long
+            val effectiveHash: String
+
+            if (existing != null) {
+                localId = existing.id
+                val existingFile = File(existing.filePath)
+                effectiveHash = ref.sha256.ifBlank {
+                    if (existingFile.isFile) sha256(existingFile) else ""
+                }
             } else {
-                val extension = ref.fileName.substringAfterLast('.', "jpg")
-                val remoteFile = filesByName["att-${ref.id}.$extension"]
-                    ?: filesByName.entries.firstOrNull {
-                        it.key.startsWith("att-${ref.id}.")
-                    }?.value
-                val bytes = remoteFile?.let { api.downloadBytes(it.id) } ?: return@forEach
-                val file = attachmentStore.saveBytes(remote.id, ref.fileName, bytes)
-                repository.addAttachment(
+                val remoteFile = findRemoteAttachmentFile(
+                    filesByName = filesByName,
+                    attachmentId = ref.id,
+                    fileName = safeFileName,
+                    mimeType = safeMime,
+                )
+                val bytes = remoteFile?.let {
+                    runCatching { api.downloadBytes(it.id) }.getOrNull()
+                } ?: return@forEach
+                val file = attachmentStore.saveBytes(remote.id, safeFileName, bytes)
+                val blockPreview = attachmentBlocks.firstOrNull {
+                    it.attachmentId == ref.id || it.fileName == ref.fileName
+                }?.previewText.orEmpty()
+                localId = repository.addSyncedAttachment(
                     noteId = remote.id,
                     filePath = file.absolutePath,
-                    mimeType = ref.mimeType,
-                    extractedText = "",
+                    mimeType = safeMime,
+                    extractedText = blockPreview,
+                    preferredId = ref.id,
                 )
+                effectiveHash = ref.sha256.ifBlank { sha256(file) }
+                downloadedAny = true
             }
+
             remoteToLocal[ref.id] = localId
-            newAttachments[ref.id] = RemoteAttachmentMeta(
-                id = ref.id,
-                sha256 = ref.sha256,
-                mimeType = ref.mimeType,
-                fileName = ref.fileName,
+            if (ref.fileName.isNotBlank()) fileNameToLocal[ref.fileName] = localId
+            newAttachments[localId] = RemoteAttachmentMeta(
+                id = localId,
+                sha256 = effectiveHash,
+                mimeType = safeMime,
+                fileName = safeFileName,
                 noteId = remote.id,
             )
         }
 
-        if (remoteToLocal.isNotEmpty()) {
+        if (remoteToLocal.isNotEmpty() || downloadedAny) {
             val mapped = existingBlocks.map { block ->
-                if (block is AttachmentBlock && block.attachmentId != null) {
-                    block.copy(attachmentId = remoteToLocal[block.attachmentId] ?: block.attachmentId)
+                if (block is AttachmentBlock) {
+                    val mappedId = block.attachmentId?.let { remoteToLocal[it] ?: it }
+                        ?: fileNameToLocal[block.fileName]
+                    if (mappedId != block.attachmentId) block.copy(attachmentId = mappedId) else block
                 } else {
                     block
                 }
             }
-            repository.upsertSyncedNote(
-                noteId = remote.id,
-                folderId = localFolderId,
-                title = remote.title,
-                blocks = mapped,
-                updatedAt = remote.updatedAt,
-                remoteOcrText = remote.ocrText,
-                fontStyle = remote.fontStyle,
-                isPinned = remote.isPinned,
-            )
+            if (mapped != existingBlocks || downloadedAny) {
+                repository.upsertSyncedNote(
+                    noteId = remote.id,
+                    folderId = localFolderId,
+                    title = remote.title,
+                    blocks = mapped,
+                    updatedAt = remote.updatedAt,
+                    remoteOcrText = remote.ocrText,
+                    fontStyle = remote.fontStyle,
+                    isPinned = remote.isPinned,
+                )
+            }
         }
         tombstones.clear(remote.id)
+    }
+
+    private suspend fun hasPendingAttachmentUpload(
+        noteId: Long,
+        filesByName: Map<String, DriveFile>,
+        remoteAttachments: Map<Long, RemoteAttachmentMeta>,
+    ): Boolean {
+        return repository.getAttachments(noteId).any { attachment ->
+            val file = File(attachment.filePath)
+            if (!file.isFile) return@any false
+            val hash = sha256(file)
+            val previous = remoteAttachments[attachment.id]
+            val remoteFile = findRemoteAttachmentFile(
+                filesByName = filesByName,
+                attachmentId = attachment.id,
+                fileName = file.name,
+                mimeType = attachment.mimeType,
+            )
+            previous?.sha256 != hash || remoteFile == null
+        }
+    }
+
+    private fun findRemoteAttachmentFile(
+        filesByName: Map<String, DriveFile>,
+        attachmentId: Long,
+        fileName: String,
+        mimeType: String,
+    ): DriveFile? {
+        val rawExt = fileName.substringAfterLast('.', "")
+        val lowerExt = rawExt.lowercase(Locale.ROOT).ifBlank { extensionForMime(mimeType) }
+        return filesByName["att-$attachmentId.$lowerExt"]
+            ?: rawExt.takeIf { it.isNotBlank() }?.let { filesByName["att-$attachmentId.$it"] }
+            ?: filesByName.entries.firstOrNull { (name, file) ->
+                name.startsWith("att-$attachmentId.", ignoreCase = true) ||
+                    file.appProperties["kriboAttachmentId"] == attachmentId.toString()
+            }?.value
+    }
+
+    private fun extensionForMime(mimeType: String): String = when (mimeType.lowercase(Locale.ROOT)) {
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        "application/pdf" -> "pdf"
+        else -> "jpg"
     }
 
     private data class UploadedNote(
@@ -382,30 +513,37 @@ class DriveSyncManager(
     private suspend fun uploadLocalNote(
         note: NoteEntity,
         root: DriveFile,
-        filesByName: Map<String, DriveFile>,
+        filesByName: MutableMap<String, DriveFile>,
         remoteAttachments: Map<Long, RemoteAttachmentMeta>,
         folderById: Map<Long, com.blackeye.kribo.data.FolderEntity>,
         newAttachments: MutableMap<Long, RemoteAttachmentMeta>,
     ): UploadedNote {
-        val blocks = BlockCodec.decode(note.blocksJson)
         val refs = mutableListOf<RemoteAttachmentRef>()
         var uploads = 0
         repository.getAttachments(note.id).forEach { attachment ->
             val file = File(attachment.filePath)
             if (!file.isFile) return@forEach
             val hash = sha256(file)
-            val extension = file.extension.ifBlank { "bin" }
+            val extension = file.extension.lowercase(Locale.ROOT).ifBlank {
+                extensionForMime(attachment.mimeType)
+            }
             val remoteName = "att-${attachment.id}.$extension"
-            val remoteFile = filesByName[remoteName]
+            val remoteFile = findRemoteAttachmentFile(
+                filesByName = filesByName,
+                attachmentId = attachment.id,
+                fileName = file.name,
+                mimeType = attachment.mimeType,
+            )
             val previous = remoteAttachments[attachment.id]
             if (previous?.sha256 != hash || remoteFile == null) {
                 val bytes = file.readBytes()
                 val props = mapOf("kriboAttachmentId" to attachment.id.toString())
-                if (remoteFile == null) {
+                val saved = if (remoteFile == null) {
                     api.createFile(root.id, remoteName, attachment.mimeType, bytes, props)
                 } else {
                     api.updateFile(remoteFile.id, remoteName, attachment.mimeType, bytes, props)
                 }
+                filesByName[saved.name] = saved
                 uploads++
             }
             refs += RemoteAttachmentRef(
@@ -440,11 +578,12 @@ class DriveSyncManager(
         val name = "note-${note.id}.json"
         val bytes = json.encodeToString(remoteNote).toByteArray(Charsets.UTF_8)
         val existing = filesByName[name]
-        if (existing == null) {
+        val savedNoteFile = if (existing == null) {
             api.createFile(root.id, name, "application/json", bytes)
         } else {
             api.updateFile(existing.id, name, "application/json", bytes)
         }
+        filesByName[savedNoteFile.name] = savedNoteFile
         return UploadedNote(
             meta = RemoteNoteMeta(
                 id = note.id,

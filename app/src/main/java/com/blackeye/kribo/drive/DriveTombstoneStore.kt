@@ -34,6 +34,32 @@ class DriveTombstoneStore(private val store: SecureKeyValueStore) {
         persist(current)
     }
 
+    /** Folder IDs present after the last completed sync; lets sync detect remote deletions. */
+    fun syncedFolderIds(): Set<Long> = loadLongSet(KEY_SYNCED_FOLDERS)
+
+    fun saveSyncedFolderIds(ids: Set<Long>) = saveLongSet(KEY_SYNCED_FOLDERS, ids)
+
+    /** Folders deleted locally since the last sync so they are not resurrected on pull. */
+    fun deletedFolderIds(): Set<Long> = loadLongSet(KEY_DELETED_FOLDERS)
+
+    fun markFolderDeleted(folderId: Long) {
+        val current = deletedFolderIds().toMutableSet()
+        if (current.add(folderId)) saveLongSet(KEY_DELETED_FOLDERS, current)
+    }
+
+    fun clearDeletedFolders() {
+        store.remove(KEY_DELETED_FOLDERS)
+    }
+
+    private fun loadLongSet(key: String): Set<Long> = runCatching {
+        val raw = store.get(key) ?: return@runCatching emptySet()
+        json.decodeFromString<List<Long>>(raw).toSet()
+    }.getOrDefault(emptySet())
+
+    private fun saveLongSet(key: String, values: Set<Long>) {
+        store.put(key, json.encodeToString(values.sorted()))
+    }
+
     private fun persist(values: Map<Long, Long>) {
         store.put(
             KEY,
@@ -43,5 +69,7 @@ class DriveTombstoneStore(private val store: SecureKeyValueStore) {
 
     private companion object {
         const val KEY = "drive_tombstones_v1"
+        const val KEY_SYNCED_FOLDERS = "drive_synced_folders_v1"
+        const val KEY_DELETED_FOLDERS = "drive_deleted_folders_v1"
     }
 }

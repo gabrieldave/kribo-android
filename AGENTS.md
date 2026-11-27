@@ -1,4 +1,4 @@
-# AGENTS.md — Reglas de Kribo Android (v1.0.17)
+# AGENTS.md — Reglas de Kribo Android (v1.0.19)
 
 Este documento es vinculante para cualquier agente o persona que toque el repositorio.
 Si una tarea entra en conflicto con estas reglas, se detiene y se consulta al CEO.

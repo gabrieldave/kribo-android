@@ -8,7 +8,7 @@ class DrivePrefs(context: Context) {
         .getSharedPreferences("kribo_drive", Context.MODE_PRIVATE)
 
     var autoSync: Boolean
-        get() = prefs.getBoolean(KEY_AUTO, false)
+        get() = prefs.getBoolean(KEY_AUTO, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO, value).apply()
 
     var wifiOnly: Boolean

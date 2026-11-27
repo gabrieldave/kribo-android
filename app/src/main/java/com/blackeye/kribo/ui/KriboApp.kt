@@ -55,10 +55,12 @@ fun KriboApp(
         }
 
         composable(Routes.HOME) {
+            val autoSyncState by container.driveAutoSyncScheduler.state.collectAsStateWithLifecycle()
             HomeScreen(
                 viewModel = library,
                 uiPreferences = container.uiPreferences,
                 billingState = billingState,
+                autoSyncState = autoSyncState,
                 onOpenNote = { id, query -> navController.navigate(Routes.noteEdit(id, query)) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
                 onPurchase = onPurchase,

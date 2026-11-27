@@ -3,8 +3,10 @@ package com.blackeye.kribo.drive
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.blackeye.kribo.data.DEFAULT_FOLDER_GENERAL
 import com.blackeye.kribo.data.KriboDatabase
 import com.blackeye.kribo.data.NoteRepository
+import com.blackeye.kribo.data.blocks.AttachmentBlock
 import com.blackeye.kribo.data.blocks.BlockCodec
 import com.blackeye.kribo.data.blocks.InlineSpan
 import com.blackeye.kribo.data.blocks.ListBlock
@@ -15,6 +17,14 @@ import com.blackeye.kribo.ocr.AttachmentStore
 import com.blackeye.kribo.security.InMemorySecureStore
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -53,9 +63,12 @@ class DriveSyncManagerTest {
             .build()
         seedDefaultFolders(database.openHelper.writableDatabase)
         tombstones = DriveTombstoneStore(InMemorySecureStore())
-        repository = NoteRepository(database, root) { id, deletedAt ->
-            tombstones.mark(id, deletedAt)
-        }
+        repository = NoteRepository(
+            database = database,
+            attachmentsRoot = root,
+            onNoteDeleted = { id, deletedAt -> tombstones.mark(id, deletedAt) },
+            onFolderDeleted = { folderId -> tombstones.markFolderDeleted(folderId) },
+        )
         attachmentStore = AttachmentStore(root)
         api = FakeDriveApiClient()
         auth = FakeDriveAuth()
@@ -309,6 +322,321 @@ class DriveSyncManagerTest {
         assertEquals(listOf("f1", "f2", "f3", "f4"), files.map { it.id })
     }
 
+    @Test
+    fun remoteFolderRenameColorAndIconUpdateInPlaceWithoutDuplicating() = runBlocking {
+        val folderId = repository.createFolder(
+            name = "Trabajo",
+            iconKey = "folder",
+            colorHex = "#00D8FF",
+        )!!
+        val noteId = repository.createNote(
+            folderId = folderId,
+            blocks = listOf(ParagraphBlock(text = "Pendientes")),
+            title = "Oficina",
+        )
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+        val countBefore = repository.getAllFolders().size
+
+        val manifest = json.decodeFromString<DriveManifest>(api.text("sync-manifest.json")!!)
+        val editedManifest = manifest.copy(
+            folders = manifest.folders.map { folder ->
+                if (folder.id == folderId) {
+                    folder.copy(name = "Clientes", colorHex = "#F59E0B", iconKey = "work")
+                } else {
+                    folder
+                }
+            },
+        )
+        api.seed(
+            "sync-manifest.json",
+            json.encodeToString(editedManifest).toByteArray(),
+            "application/json",
+        )
+
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+
+        val foldersAfter = repository.getAllFolders()
+        assertEquals(countBefore, foldersAfter.size)
+        assertFalse(foldersAfter.any { it.name == "Trabajo" })
+        val renamed = foldersAfter.first { it.id == folderId }
+        assertEquals("Clientes", renamed.name)
+        assertEquals("#F59E0B", renamed.colorHex)
+        assertEquals("work", renamed.iconKey)
+        assertEquals(folderId, repository.getNote(noteId)!!.folderId)
+    }
+
+    @Test
+    fun remoteFolderDeletionMovesOrphanNotesToGeneralAndProtectsGeneral() = runBlocking {
+        val tempFolderId = repository.createFolder(name = "Temporal", colorHex = "#EF4444")!!
+        val noteId = repository.createNote(
+            folderId = tempFolderId,
+            blocks = listOf(ParagraphBlock(text = "Nota huérfana")),
+            title = "Huérfana",
+        )
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+
+        // Simulate Kribo Web deleting "Temporal" (and verify General id 1 is protected even if absent).
+        val manifest = json.decodeFromString<DriveManifest>(api.text("sync-manifest.json")!!)
+        val withoutTemp = manifest.copy(
+            folders = manifest.folders.filterNot {
+                it.id == tempFolderId || it.id == DEFAULT_FOLDER_GENERAL
+            },
+        )
+        api.seed(
+            "sync-manifest.json",
+            json.encodeToString(withoutTemp).toByteArray(),
+            "application/json",
+        )
+
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+
+        val foldersAfter = repository.getAllFolders()
+        assertFalse(foldersAfter.any { it.id == tempFolderId })
+        assertTrue(foldersAfter.any { it.id == DEFAULT_FOLDER_GENERAL })
+        assertEquals(DEFAULT_FOLDER_GENERAL, repository.getNote(noteId)!!.folderId)
+    }
+
+    @Test
+    fun downloadsWebAttachmentWithoutOcrAndNeverDuplicates() = runBlocking {
+        val webNoteId = 1_764_209_000_001L
+        val webAttId = 1_764_209_000_002L
+        val imageBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3)
+        val imageHash = sha256Hex(imageBytes)
+        val blocks = listOf(
+            ParagraphBlock(id = "p-1", text = "Captura desde Mac"),
+            AttachmentBlock(
+                id = "att-blk-1",
+                attachmentId = webAttId,
+                fileName = "Captura.PNG",
+                mimeType = "image/png",
+                previewText = "",
+                pageNumber = 0,
+                manual = true,
+            ),
+        )
+        val remote = RemoteNote(
+            id = webNoteId,
+            folderId = DEFAULT_FOLDER_GENERAL,
+            folderName = "General",
+            title = "Nota con foto PC",
+            updatedAt = 1_764_209_000_500L,
+            blocks = json.parseToJsonElement(BlockCodec.encode(blocks)),
+            plainText = "Captura desde Mac",
+            ocrText = "",
+            attachments = listOf(
+                RemoteAttachmentRef(
+                    id = webAttId,
+                    fileName = "Captura.PNG",
+                    mimeType = "image/png",
+                    sha256 = imageHash,
+                ),
+            ),
+        )
+        // Kribo Web stores lowercase extension + kriboAttachmentId in appProperties.
+        api.seed(
+            name = "att-$webAttId.png",
+            bytes = imageBytes,
+            mimeType = "image/png",
+            appProperties = mapOf("kriboAttachmentId" to webAttId.toString()),
+        )
+        api.seed(
+            name = "note-$webNoteId.json",
+            bytes = json.encodeToString(remote).toByteArray(),
+            mimeType = "application/json",
+        )
+        val manifest = DriveManifest(
+            schemaVersion = 1,
+            folders = listOf(RemoteFolder(DEFAULT_FOLDER_GENERAL, "General")),
+            notes = listOf(
+                RemoteNoteMeta(
+                    id = webNoteId,
+                    updatedAt = remote.updatedAt,
+                    deletedAt = null,
+                    file = "note-$webNoteId.json",
+                ),
+            ),
+            attachments = mapOf(
+                webAttId.toString() to RemoteAttachmentMeta(
+                    id = webAttId,
+                    sha256 = imageHash,
+                    mimeType = "image/png",
+                    fileName = "Captura.PNG",
+                    noteId = webNoteId,
+                ),
+            ),
+        )
+        api.seed("sync-manifest.json", json.encodeToString(manifest).toByteArray(), "application/json")
+
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+
+        val localAttachments = repository.getAttachments(webNoteId)
+        assertEquals(1, localAttachments.size)
+        val downloaded = localAttachments.first()
+        assertEquals(webAttId, downloaded.id)
+        assertEquals("", downloaded.extractedText)
+        assertTrue(File(downloaded.filePath).isFile)
+        assertEquals(imageHash, sha256Hex(File(downloaded.filePath).readBytes()))
+
+        val localNote = repository.getNote(webNoteId)!!
+        val attBlock = BlockCodec.decode(localNote.blocksJson).filterIsInstance<AttachmentBlock>().single()
+        assertEquals(downloaded.id, attBlock.attachmentId)
+        assertEquals("", attBlock.previewText)
+
+        // Syncing a second time (and even after a remote text edit) must never duplicate the attachment.
+        val uploadsBefore = api.attachmentUploads
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+        assertEquals(1, repository.getAttachments(webNoteId).size)
+        assertEquals(uploadsBefore, api.attachmentUploads)
+
+        val updatedRemote = remote.copy(updatedAt = remote.updatedAt + 5_000L)
+        api.seed("note-$webNoteId.json", json.encodeToString(updatedRemote).toByteArray(), "application/json")
+        val manifest2 = json.decodeFromString<DriveManifest>(api.text("sync-manifest.json")!!)
+        api.seed(
+            "sync-manifest.json",
+            json.encodeToString(
+                manifest2.copy(
+                    notes = manifest2.notes.map {
+                        if (it.id == webNoteId) it.copy(updatedAt = updatedRemote.updatedAt) else it
+                    },
+                ),
+            ).toByteArray(),
+            "application/json",
+        )
+        assertTrue(manager.sync() is DriveSyncResult.Success)
+        assertEquals(1, repository.getAttachments(webNoteId).size)
+    }
+
+    @Test
+    fun autoSyncDebouncesEditsAndSerializesConcurrentTriggersWithMutex() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val active = AtomicInteger(0)
+            val maxActive = AtomicInteger(0)
+            val runs = AtomicInteger(0)
+            val firstStarted = CompletableDeferred<Unit>()
+            val releaseFirst = CompletableDeferred<Unit>()
+            val secondDone = CompletableDeferred<Unit>()
+            val network = FakeNetworkMonitor(online = true, wifi = true)
+
+            val scheduler = DriveAutoSyncScheduler(
+                syncAction = {
+                    val current = active.incrementAndGet()
+                    maxActive.accumulateAndGet(current, ::maxOf)
+                    val runNumber = runs.incrementAndGet()
+                    if (runNumber == 1) {
+                        firstStarted.complete(Unit)
+                        releaseFirst.await()
+                    }
+                    active.decrementAndGet()
+                    if (runNumber == 2) secondDone.complete(Unit)
+                    DriveSyncResult.Success(notes = 1, attachments = 0)
+                },
+                isPro = { true },
+                isDriveConnected = { true },
+                isAutoSyncEnabled = { true },
+                isWifiOnly = { true },
+                network = network,
+                scope = scope,
+                debounceMs = 60L,
+                foregroundCooldownMs = 45_000L,
+                syncedBadgeMs = 80L,
+            )
+
+            // Five rapid edits must coalesce into one single sync run.
+            repeat(5) {
+                scheduler.onLocalDataChanged()
+                delay(15L)
+            }
+            firstStarted.await()
+            assertEquals(AutoSyncUiState.SYNCING, scheduler.state.value)
+
+            // Trigger another edit while run #1 is still in flight; mutex must serialize run #2.
+            scheduler.onLocalDataChanged()
+            delay(90L)
+            assertEquals(1, runs.get())
+            releaseFirst.complete(Unit)
+            secondDone.await()
+
+            assertEquals(1, maxActive.get())
+            assertEquals(2, runs.get())
+            delay(130L)
+            assertEquals(AutoSyncUiState.IDLE, scheduler.state.value)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun autoSyncRespectsWifiOnlyQueuesRetryAndForegroundCooldown() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            var pro = false
+            var wifiOnly = true
+            var clock = 100_000L
+            val runs = AtomicInteger(0)
+            val network = FakeNetworkMonitor(online = true, wifi = false)
+
+            val scheduler = DriveAutoSyncScheduler(
+                syncAction = {
+                    runs.incrementAndGet()
+                    DriveSyncResult.Success(notes = 1, attachments = 0)
+                },
+                isPro = { pro },
+                isDriveConnected = { true },
+                isAutoSyncEnabled = { true },
+                isWifiOnly = { wifiOnly },
+                network = network,
+                scope = scope,
+                debounceMs = 40L,
+                foregroundCooldownMs = 45_000L,
+                syncedBadgeMs = 50L,
+                nowMs = { clock },
+            )
+
+            // Free user: must never schedule or run sync.
+            scheduler.onLocalDataChanged()
+            delay(80L)
+            assertEquals(0, runs.get())
+            assertFalse(scheduler.hasPendingRetry)
+
+            // PRO user on cellular with Wi-Fi Only ON: must queue retry silently without syncing.
+            pro = true
+            scheduler.onLocalDataChanged()
+            delay(80L)
+            assertEquals(0, runs.get())
+            assertTrue(scheduler.hasPendingRetry)
+            assertTrue(network.registered)
+            assertEquals(AutoSyncUiState.IDLE, scheduler.state.value)
+
+            // Regaining Wi-Fi triggers the queued retry automatically and unregisters callback.
+            network.wifi = true
+            network.fireReconnect()
+            delay(80L)
+            assertEquals(1, runs.get())
+            assertFalse(scheduler.hasPendingRetry)
+            assertFalse(network.registered)
+
+            // Foreground within 45s cooldown must be skipped.
+            clock += 10_000L
+            scheduler.onAppForeground()
+            delay(60L)
+            assertEquals(1, runs.get())
+
+            // Foreground after 45s cooldown runs cleanly.
+            clock += 46_000L
+            scheduler.onAppForeground()
+            delay(60L)
+            assertEquals(2, runs.get())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+
     private fun remoteNote(id: Long, updatedAt: Long, text: String): RemoteNote {
         val blocks = BlockCodec.encode(listOf(ParagraphBlock(text = text)))
         return RemoteNote(
@@ -429,10 +757,15 @@ class DriveSyncManagerTest {
             contents.remove(fileId)
         }
 
-        fun seed(name: String, bytes: ByteArray, mimeType: String): DriveFile {
+        fun seed(
+            name: String,
+            bytes: ByteArray,
+            mimeType: String,
+            appProperties: Map<String, String> = emptyMap(),
+        ): DriveFile {
             val existing = files.values.firstOrNull { it.name == name }
             val id = existing?.id ?: "seed-${counter++}"
-            val file = DriveFile(id, name, mimeType)
+            val file = DriveFile(id, name, mimeType, appProperties = appProperties)
             files[id] = file
             contents[id] = bytes
             return file
@@ -447,6 +780,32 @@ class DriveSyncManagerTest {
 
         private fun checkOnline() {
             if (fail) throw IOException("network down")
+        }
+    }
+
+    private class FakeNetworkMonitor(
+        var online: Boolean,
+        var wifi: Boolean,
+    ) : DriveNetworkMonitor {
+        var registered = false
+            private set
+        private var callback: (() -> Unit)? = null
+
+        override fun isOnline(): Boolean = online
+        override fun isUnmeteredWifi(): Boolean = online && wifi
+
+        override fun registerForReconnect(onAvailable: () -> Unit) {
+            registered = true
+            callback = onAvailable
+        }
+
+        override fun unregister() {
+            registered = false
+            callback = null
+        }
+
+        fun fireReconnect() {
+            callback?.invoke()
         }
     }
 }

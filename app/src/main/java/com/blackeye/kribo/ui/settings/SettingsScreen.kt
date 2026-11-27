@@ -40,7 +40,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.LaptopMac
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.MicNone
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Star
@@ -279,7 +279,7 @@ fun SettingsScreen(
                     .testTag("settings-dictation-row"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconTile(Icons.Rounded.MicNone)
+                IconTile(Icons.Rounded.Mic)
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

@@ -109,12 +109,14 @@ import com.blackeye.kribo.data.FolderEntity
 import com.blackeye.kribo.data.NoteEntity
 import com.blackeye.kribo.data.export.NoteExportPayload
 import com.blackeye.kribo.data.export.copyTextToClipboard
+import com.blackeye.kribo.drive.AutoSyncUiState
 import com.blackeye.kribo.ui.common.SearchText
 import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.common.findActivity
 import com.blackeye.kribo.ui.share.AiShareSheet
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
+import com.blackeye.kribo.ui.components.AutoSyncStatusIcon
 import com.blackeye.kribo.ui.components.BentoNoteCard
 import com.blackeye.kribo.ui.billing.ProPaywallSheet
 import com.blackeye.kribo.ui.components.CompactNoteRow
@@ -138,6 +140,7 @@ fun HomeScreen(
     viewModel: LibraryViewModel,
     uiPreferences: UiPreferences,
     billingState: BillingUiState,
+    autoSyncState: AutoSyncUiState = AutoSyncUiState.IDLE,
     onOpenNote: (Long, String) -> Unit,
     onSettings: () -> Unit,
     onPurchase: () -> Unit,
@@ -334,6 +337,10 @@ fun HomeScreen(
                     testTag = "home-selection-close",
                 )
             } else {
+                AutoSyncStatusIcon(
+                    state = autoSyncState,
+                    modifier = Modifier.testTag("home-auto-sync-indicator"),
+                )
                 TooltipIconButton(
                     icon = Icons.Rounded.Settings,
                     contentDescription = stringResource(R.string.cd_settings),

@@ -90,6 +90,7 @@ fun DriveSyncScreen(
     val manager = container.driveSyncManager
     val prefs = container.drivePrefs
     val scheduler = container.driveSyncScheduler
+    val autoScheduler = container.driveAutoSyncScheduler
     val session by auth.session.collectAsStateWithLifecycle()
 
     var syncing by remember { mutableStateOf(false) }
@@ -113,6 +114,8 @@ fun DriveSyncScreen(
         }
         when (auth.completeAuthorization(host, result.data!!)) {
             DriveAuthOutcome.Connected -> {
+                if (prefs.autoSync) scheduler.update()
+                autoScheduler.onSettingsChanged()
                 if (pendingSync) {
                     pendingSync = false
                     syncTrigger += 1
@@ -134,6 +137,8 @@ fun DriveSyncScreen(
         when (val outcome = auth.authorize(host)) {
             DriveAuthOutcome.Connected -> {
                 message = null
+                if (prefs.autoSync) scheduler.update()
+                autoScheduler.onSettingsChanged()
                 if (pendingSync) {
                     pendingSync = false
                     syncTrigger += 1
@@ -214,11 +219,13 @@ fun DriveSyncScreen(
                 autoSync = it
                 prefs.autoSync = it
                 scheduler.update()
+                autoScheduler.onSettingsChanged()
             },
             onWifiChange = {
                 wifiOnly = it
                 prefs.wifiOnly = it
                 if (autoSync) scheduler.update()
+                autoScheduler.onSettingsChanged()
             },
             onDisconnect = { showDisconnect = true },
             webLinkCopied = webLinkCopied,
@@ -243,6 +250,7 @@ fun DriveSyncScreen(
                 prefs.autoSync = false
                 scheduler.update()
                 auth.disconnect()
+                autoScheduler.onDisconnected()
                 message = null
             },
         ) {

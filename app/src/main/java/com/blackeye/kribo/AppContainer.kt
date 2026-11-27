@@ -5,8 +5,10 @@ import com.blackeye.kribo.billing.BillingManager
 import com.blackeye.kribo.billing.EntitlementRepository
 import com.blackeye.kribo.data.KriboDatabase
 import com.blackeye.kribo.data.NoteRepository
+import com.blackeye.kribo.drive.AndroidDriveNetworkMonitor
 import com.blackeye.kribo.drive.DriveApiClient
 import com.blackeye.kribo.drive.DriveAuthManager
+import com.blackeye.kribo.drive.DriveAutoSyncScheduler
 import com.blackeye.kribo.drive.DrivePrefs
 import com.blackeye.kribo.drive.DriveSessionStore
 import com.blackeye.kribo.drive.DriveSyncManager
@@ -43,9 +45,19 @@ class AppContainer(context: Context) {
     val driveTombstones: DriveTombstoneStore by lazy { DriveTombstoneStore(secureStore) }
 
     val noteRepository: NoteRepository by lazy {
-        NoteRepository(database, attachmentsRoot) { noteId, deletedAt ->
-            driveTombstones.mark(noteId, deletedAt)
-        }
+        NoteRepository(
+            database = database,
+            attachmentsRoot = attachmentsRoot,
+            onNoteDeleted = { noteId, deletedAt ->
+                driveTombstones.mark(noteId, deletedAt)
+            },
+            onFolderDeleted = { folderId ->
+                driveTombstones.markFolderDeleted(folderId)
+            },
+            onDataChanged = {
+                driveAutoSyncScheduler.onLocalDataChanged()
+            },
+        )
     }
 
     val importService: ImportService by lazy {
@@ -98,6 +110,17 @@ class AppContainer(context: Context) {
     }
 
     val driveSyncScheduler by lazy { DriveSyncScheduler(appContext, drivePrefs) }
+
+    val driveAutoSyncScheduler: DriveAutoSyncScheduler by lazy {
+        DriveAutoSyncScheduler(
+            syncAction = { driveSyncManager.sync() },
+            isPro = { entitlementRepository.isPro.value },
+            isDriveConnected = { driveAuthManager.validToken() != null },
+            isAutoSyncEnabled = { drivePrefs.autoSync },
+            isWifiOnly = { drivePrefs.wifiOnly },
+            network = AndroidDriveNetworkMonitor(appContext),
+        )
+    }
 
     /** UI-only preferences (theme + home layout); never touches Room, OCR or secure storage. */
     val uiPreferences: UiPreferences by lazy { UiPreferences(appContext) }

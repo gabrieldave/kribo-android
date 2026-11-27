@@ -10,6 +10,8 @@ class NoteRepository(
     private val database: KriboDatabase,
     private val attachmentsRoot: File,
     private val onNoteDeleted: ((noteId: Long, deletedAt: Long) -> Unit)? = null,
+    private val onFolderDeleted: ((folderId: Long) -> Unit)? = null,
+    private val onDataChanged: (() -> Unit)? = null,
 ) {
     private val noteDao = database.noteDao()
     private val folderDao = database.folderDao()
@@ -44,7 +46,7 @@ class NoteRepository(
         title: String = BlockCodec.derivedTitle(blocks),
     ): Long {
         val now = System.currentTimeMillis()
-        return noteDao.insert(
+        val id = noteDao.insert(
             NoteEntity(
                 folderId = folderId,
                 title = title.take(120),
@@ -56,6 +58,8 @@ class NoteRepository(
                 updatedAt = now,
             ),
         )
+        onDataChanged?.invoke()
+        return id
     }
 
     suspend fun saveBlocks(noteId: Long, blocks: List<NoteBlock>) {
@@ -76,6 +80,7 @@ class NoteRepository(
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        onDataChanged?.invoke()
     }
 
     /** Persists the editable note title shown by the fixed title field in the editor. */
@@ -87,6 +92,7 @@ class NoteRepository(
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        onDataChanged?.invoke()
     }
 
     /** Changes the per-note editorial font (#42); older notes keep SANS through the default. */
@@ -98,6 +104,7 @@ class NoteRepository(
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        onDataChanged?.invoke()
     }
 
     suspend fun addAttachment(
@@ -117,6 +124,43 @@ class NoteRepository(
         )
         refreshOcrIndex(noteId)
         return id
+    }
+
+    /**
+     * Silent attachment insert used by Drive sync: never bumps updatedAt or triggers auto-sync.
+     * Preserves [preferredId] when available so attachment IDs stay 1:1 with Kribo Web.
+     */
+    suspend fun addSyncedAttachment(
+        noteId: Long,
+        filePath: String,
+        mimeType: String,
+        extractedText: String,
+        preferredId: Long? = null,
+    ): Long {
+        val now = System.currentTimeMillis()
+        val idToUse = preferredId?.takeIf { it > 0L && attachmentDao.getById(it) == null } ?: 0L
+        return runCatching {
+            attachmentDao.insert(
+                AttachmentEntity(
+                    id = idToUse,
+                    noteId = noteId,
+                    filePath = filePath,
+                    mimeType = mimeType,
+                    extractedText = extractedText,
+                    createdAt = now,
+                ),
+            )
+        }.getOrElse {
+            attachmentDao.insert(
+                AttachmentEntity(
+                    noteId = noteId,
+                    filePath = filePath,
+                    mimeType = mimeType,
+                    extractedText = extractedText,
+                    createdAt = now,
+                ),
+            )
+        }
     }
 
     /** Used by Drive sync to restore a remote note with its original id and timestamp. */
@@ -165,6 +209,7 @@ class NoteRepository(
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        onDataChanged?.invoke()
     }
 
     /** Persists user edits to the extracted OCR text and keeps the search index in sync. */
@@ -186,14 +231,24 @@ class NoteRepository(
         attachmentDao.deleteForNote(noteId)
         noteDao.deleteById(noteId)
         File(attachmentsRoot, noteId.toString()).deleteRecursively()
+        onDataChanged?.invoke()
+    }
+
+    /** Silent deletion used by Drive sync when a remote tombstone wins; never triggers auto-sync. */
+    suspend fun deleteSyncedNote(noteId: Long) {
+        attachmentDao.deleteForNote(noteId)
+        noteDao.deleteById(noteId)
+        File(attachmentsRoot, noteId.toString()).deleteRecursively()
     }
 
     suspend fun setPinned(noteId: Long, pinned: Boolean) {
         noteDao.setPinned(noteId, pinned, System.currentTimeMillis())
+        onDataChanged?.invoke()
     }
 
     suspend fun moveToFolder(noteId: Long, folderId: Long?) {
         noteDao.moveToFolder(noteId, folderId, System.currentTimeMillis())
+        onDataChanged?.invoke()
     }
 
     suspend fun noteCount(): Int = noteDao.count()
@@ -210,7 +265,7 @@ class NoteRepository(
         val clean = name.trim().take(48)
         if (clean.isEmpty()) return null
         if (folderDao.findByName(clean) != null) return null
-        return runCatching {
+        val createdId = runCatching {
             folderDao.insert(
                 FolderEntity(
                     name = clean,
@@ -221,6 +276,8 @@ class NoteRepository(
                 ),
             )
         }.getOrNull()
+        if (createdId != null) onDataChanged?.invoke()
+        return createdId
     }
 
     suspend fun renameFolder(folderId: Long, newName: String): Boolean {
@@ -229,14 +286,124 @@ class NoteRepository(
         val folder = folderDao.getById(folderId) ?: return false
         val duplicate = folderDao.findByName(clean)
         if (duplicate != null && duplicate.id != folderId) return false
-        return runCatching {
+        val updated = runCatching {
             folderDao.update(folder.copy(name = clean))
             true
         }.getOrDefault(false)
+        if (updated) onDataChanged?.invoke()
+        return updated
     }
 
     /** General (id 1) is protected. Notes of a deleted folder move back to General. */
     suspend fun deleteFolder(folderId: Long): Boolean {
+        if (folderId == DEFAULT_FOLDER_GENERAL) return false
+        folderDao.getById(folderId) ?: return false
+        folderDao.reassignNotes(folderId, DEFAULT_FOLDER_GENERAL)
+        folderDao.deleteById(folderId)
+        onFolderDeleted?.invoke(folderId)
+        onDataChanged?.invoke()
+        return true
+    }
+
+    /**
+     * Silent folder reconciliation used by Drive sync (1:1 parity with Kribo Web).
+     * Matches by [remoteId] first so remote renames and color/icon changes update in place
+     * without duplicating folders; protects General (id 1) from being renamed.
+     */
+    suspend fun upsertSyncedFolder(
+        remoteId: Long,
+        name: String,
+        colorHex: String? = null,
+        iconKey: String? = null,
+    ): Long {
+        val clean = name.trim().take(48).ifBlank { "General" }
+        val safeColor = colorHex?.trim()?.takeIf { HEX_COLOR_PATTERN.matches(it) }
+        val safeIcon = iconKey?.trim()?.take(32)?.takeIf { it.isNotEmpty() }
+
+        if (remoteId == DEFAULT_FOLDER_GENERAL || clean.equals("General", ignoreCase = true)) {
+            val general = folderDao.getById(DEFAULT_FOLDER_GENERAL) ?: folderDao.findByName(clean)
+            if (general != null) {
+                val updatedColor = safeColor ?: general.colorHex
+                val updatedIcon = safeIcon ?: general.iconKey
+                if (updatedColor != general.colorHex || updatedIcon != general.iconKey) {
+                    folderDao.update(general.copy(colorHex = updatedColor, iconKey = updatedIcon))
+                }
+                return general.id
+            }
+        }
+
+        val byId = if (remoteId > 0L) folderDao.getById(remoteId) else null
+        if (byId != null) {
+            val duplicate = folderDao.findByName(clean)
+            if (duplicate != null && duplicate.id != byId.id) {
+                val updatedColor = safeColor ?: duplicate.colorHex
+                val updatedIcon = safeIcon ?: duplicate.iconKey
+                if (updatedColor != duplicate.colorHex || updatedIcon != duplicate.iconKey) {
+                    folderDao.update(duplicate.copy(colorHex = updatedColor, iconKey = updatedIcon))
+                }
+                return duplicate.id
+            }
+            val updatedName = if (byId.id == DEFAULT_FOLDER_GENERAL) byId.name else clean
+            val updatedColor = safeColor ?: byId.colorHex
+            val updatedIcon = safeIcon ?: byId.iconKey
+            if (updatedName != byId.name ||
+                updatedColor != byId.colorHex ||
+                updatedIcon != byId.iconKey
+            ) {
+                folderDao.update(
+                    byId.copy(
+                        name = updatedName,
+                        colorHex = updatedColor,
+                        iconKey = updatedIcon,
+                    ),
+                )
+            }
+            return byId.id
+        }
+
+        val byName = folderDao.findByName(clean)
+        if (byName != null) {
+            val updatedColor = safeColor ?: byName.colorHex
+            val updatedIcon = safeIcon ?: byName.iconKey
+            if (updatedColor != byName.colorHex || updatedIcon != byName.iconKey) {
+                folderDao.update(byName.copy(colorHex = updatedColor, iconKey = updatedIcon))
+            }
+            return byName.id
+        }
+
+        val idToUse = if (remoteId > 0L) remoteId else 0L
+        val inserted = runCatching {
+            folderDao.insert(
+                FolderEntity(
+                    id = idToUse,
+                    name = clean,
+                    iconKey = safeIcon ?: "folder",
+                    colorHex = safeColor ?: "#00D8FF",
+                    sortOrder = folderDao.nextSortOrder(),
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }.getOrElse {
+            runCatching {
+                folderDao.insert(
+                    FolderEntity(
+                        name = clean,
+                        iconKey = safeIcon ?: "folder",
+                        colorHex = safeColor ?: "#00D8FF",
+                        sortOrder = folderDao.nextSortOrder(),
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+            }.getOrNull()
+        }
+        return inserted ?: folderDao.findByName(clean)?.id ?: DEFAULT_FOLDER_GENERAL
+    }
+
+    /**
+     * Silent folder deletion used by Drive sync when a folder was removed in Kribo Web.
+     * Never deletes General (id 1); reassigns any orphan local notes to General first.
+     */
+    suspend fun deleteSyncedFolder(folderId: Long): Boolean {
         if (folderId == DEFAULT_FOLDER_GENERAL) return false
         folderDao.getById(folderId) ?: return false
         folderDao.reassignNotes(folderId, DEFAULT_FOLDER_GENERAL)
