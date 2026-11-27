@@ -38,6 +38,17 @@ enum class HomeLayout(val id: String) {
     }
 }
 
+enum class VoiceEngineMode(val id: String) {
+    SYSTEM("system"),
+    OFFLINE_MOONSHINE("offline_moonshine"),
+    ;
+
+    companion object {
+        fun fromId(id: String?): VoiceEngineMode =
+            entries.firstOrNull { it.id == id } ?: SYSTEM
+    }
+}
+
 /**
  * Lightweight UI preferences (theme + home layout). Separate from Room, secure OCR storage and
  * billing; reads happen once and live changes are exposed as StateFlows.
@@ -61,6 +72,11 @@ class UiPreferences(context: Context) {
         preferences.getBoolean(KEY_ONBOARDING_SEEN, false),
     )
     val onboardingSeen: StateFlow<Boolean> = _onboardingSeen.asStateFlow()
+
+    private val _voiceEngineMode = MutableStateFlow(
+        VoiceEngineMode.fromId(preferences.getString(KEY_VOICE_ENGINE, null)),
+    )
+    val voiceEngineMode: StateFlow<VoiceEngineMode> = _voiceEngineMode.asStateFlow()
 
     fun markOnboardingSeen() {
         if (_onboardingSeen.value) return
@@ -86,11 +102,18 @@ class UiPreferences(context: Context) {
         _homeLayout.value = layout
     }
 
+    fun setVoiceEngineMode(mode: VoiceEngineMode) {
+        if (_voiceEngineMode.value == mode) return
+        preferences.edit().putString(KEY_VOICE_ENGINE, mode.id).apply()
+        _voiceEngineMode.value = mode
+    }
+
     companion object {
         private const val PREFS_NAME = "kribo_ui"
         private const val KEY_THEME = "theme_v1"
         private const val KEY_HOME_LAYOUT = "home_layout_v1"
         private const val KEY_ONBOARDING_SEEN = "onboarding_seen_v1"
         private const val KEY_WELCOME_NOTE_SEEDED = "welcome_note_seeded_v1"
+        private const val KEY_VOICE_ENGINE = "voice_engine_v1"
     }
 }

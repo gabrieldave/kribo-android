@@ -45,6 +45,9 @@
 # ONNX Runtime + PP-OCRv5 native bridge.
 -keep class ai.onnxruntime.** { *; }
 -dontwarn ai.onnxruntime.**
+# Moonshine Voice (MIT) streaming speech-to-text native bridge.
+-keep class ai.moonshine.voice.** { *; }
+-dontwarn ai.moonshine.voice.**
 -keepclasseswithmembernames class * {
     native <methods>;
 }

@@ -94,6 +94,7 @@ fun KriboApp(
                 billingState = billingState,
                 library = library,
                 uiPreferences = container.uiPreferences,
+                voiceModelManager = container.voiceModelManager,
                 onBack = { navController.popBackStack() },
                 onPurchase = onPurchase,
                 isPro = isPro,

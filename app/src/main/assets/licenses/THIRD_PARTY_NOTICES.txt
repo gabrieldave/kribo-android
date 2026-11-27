@@ -22,9 +22,16 @@ https://developers.google.com/ml-kit/terms
 
 ONNX Runtime for Android
 ------------------------
-On-device inference runtime for the scanning pipeline.
+On-device inference runtime for the scanning and offline dictation pipelines.
 License: MIT License.
 https://github.com/microsoft/onnxruntime
+
+Moonshine Voice (Streaming STT)
+-------------------------------
+Optional on-demand offline streaming speech-to-text SDK and streaming voice models (Spanish and English).
+Copyright (c) 2025 Useful Sensors, Inc. (dba Moonshine AI)
+License: MIT License.
+https://github.com/moonshine-ai/moonshine
 
 AndroidX, Jetpack Compose, Room, Coil, Kotlin and kotlinx.coroutines
 --------------------------------------------------------------------

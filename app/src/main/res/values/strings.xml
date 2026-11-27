@@ -470,7 +470,7 @@
     <string name="cd_edit_link">Edit link</string>
     <string name="cd_link_done">Done</string>
     <string name="settings_dictation_title">Voice dictation</string>
-    <string name="settings_dictation_subtitle">Available in the editor toolbar using Android\'s native speech recognition</string>
+    <string name="settings_dictation_subtitle">Choose between lightweight system dictation or 100% offline streaming on device</string>
     <string name="settings_dictation_badge">Active</string>
     <string name="guide_topic_export_item_5">Send one or several notes to ChatGPT, Gemini or Claude as a .txt with a ready prompt</string>
     <string name="reorder_title">Reorder blocks</string>
@@ -507,13 +507,35 @@
     <string name="cd_voice_dictation">Voice dictation</string>
     <string name="block_tooltip_dictation">Voice dictation — Speak to write into your note</string>
     <string name="dictation_listening">Listening… speak now</string>
+    <string name="dictation_loading">Preparing offline voice engine…</string>
     <string name="dictation_stop">Stop dictation</string>
     <string name="dictation_permission_title">Microphone permission</string>
-    <string name="dictation_permission_body">Kribo uses Android\'s built-in voice recognition to turn your speech into text inside this note. No Kribo servers are involved.</string>
+    <string name="dictation_permission_body">Kribo uses the microphone to convert your speech into text inside this note (either via Android\'s native speech recognition or the optional offline Moonshine engine). No Kribo servers are involved.</string>
     <string name="dictation_permission_allow">Allow microphone</string>
     <string name="dictation_permission_denied">Microphone permission denied. Enable it in system settings to dictate.</string>
     <string name="dictation_unavailable">Voice recognition is not available on this device.</string>
     <string name="dictation_no_match">No speech detected. Try again.</string>
+    <string name="dictation_audio_error">Could not access the microphone. Check if another app is using it.</string>
     <string name="dictation_error">Could not complete voice dictation. Try again.</string>
-    <string name="guide_topic_editor_item_4">Tap the microphone button in the toolbar to dictate text with Android\'s native speech recognition in your chosen language.</string>
+    <string name="guide_topic_editor_item_4">Tap the microphone button to dictate text using Android\'s lightweight system dictation (0 MB) or enable 100% offline Moonshine streaming in Settings with on-demand Spanish and English packs.</string>
+
+    <string name="voice_engine_system_title">System (0 MB)</string>
+    <string name="voice_engine_system_subtitle">Android\'s built-in dictation · zero extra storage</string>
+    <string name="voice_engine_offline_title">Offline high quality (Moonshine)</string>
+    <string name="voice_engine_offline_subtitle">Continuous streaming in airplane mode (MIT · on-demand packs)</string>
+    <string name="voice_packs_header">Offline voice packs</string>
+    <string name="voice_lang_spanish">Spanish</string>
+    <string name="voice_lang_english">English</string>
+    <string name="voice_pack_status_not_downloaded">Not downloaded (~%1$d MB)</string>
+    <string name="voice_pack_status_downloading">Downloading %1$d%%</string>
+    <string name="voice_pack_status_ready">Ready offline — %1$d MB</string>
+    <string name="voice_pack_download">Download</string>
+    <string name="voice_pack_delete">Delete pack</string>
+    <string name="voice_download_error_network">Download failed. Check your connection and try again.</string>
+    <string name="voice_download_error_space">Not enough free storage space to download this voice pack.</string>
+    <string name="voice_download_error_integrity">File integrity check failed. Please download again.</string>
+    <string name="voice_missing_title">Download %1$s voice pack</string>
+    <string name="voice_missing_body">Offline high-quality dictation needs the %1$s streaming pack (~%2$d MB) once on your device so it works even in airplane mode.</string>
+    <string name="voice_missing_download_now">Download now (~%1$d MB)</string>
+    <string name="voice_missing_use_system">Use system dictation</string>
 </resources>

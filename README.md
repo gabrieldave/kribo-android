@@ -7,7 +7,7 @@ Home ofrece lista compacta o cuadrícula Bento, 9 temas oficiales (Obsidiana, Pa
 - **Paquete:** `com.blackeye.kribo`
 - **Stack:** Kotlin · Jetpack Compose · Material 3 · Room v3 · SplashScreen API · ML Kit Document Scanner + ONNX Runtime PP-OCRv5
 - **SDK:** compileSdk 36 · targetSdk 36 · minSdk 26
-- **Versión:** 1.0.19 (versionCode 20)
+- **Versión:** 1.0.20 (versionCode 21)
 - **Billing:** Google Play Billing `billing-ktx` 8.3.0
 
 ## Requisitos

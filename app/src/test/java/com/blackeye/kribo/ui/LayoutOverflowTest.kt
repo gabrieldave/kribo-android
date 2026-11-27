@@ -32,9 +32,13 @@ import com.blackeye.kribo.ui.drive.DriveSyncMessage
 import com.blackeye.kribo.ui.home.BulkSelectionBar
 import com.blackeye.kribo.ui.home.QuickCaptureBar
 import com.blackeye.kribo.ui.preferences.AppTheme
+import com.blackeye.kribo.ui.preferences.VoiceEngineMode
 import com.blackeye.kribo.ui.settings.AppLanguage
 import com.blackeye.kribo.ui.settings.CompactAppearanceCard
 import com.blackeye.kribo.ui.settings.KriboWebSettingsRow
+import com.blackeye.kribo.ui.settings.VoiceDictationSettingsCard
+import com.blackeye.kribo.voice.VoiceModelDownloadState
+import com.blackeye.kribo.voice.VoiceModelLanguage
 import com.blackeye.kribo.ui.transfer.WifiTransferContent
 import com.blackeye.kribo.transfer.WifiTransferServer
 import com.blackeye.kribo.ui.note.AttachmentActionsRow
@@ -639,6 +643,94 @@ class LayoutOverflowTest {
                 val rowHeightDp = rowBounds.height / TEST_DENSITY
                 assertTrue("settings-kribo-web-row collapsed to ${rowWidthDp}dp", rowWidthDp >= 300f)
                 assertTrue("settings-kribo-web-row squished to ${rowHeightDp}dp at scale $fontScale", rowHeightDp <= 140f)
+            }
+        }
+    }
+
+    @Test
+    fun voiceDictationSettingsCardFits360DpInBothLanguages() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        var states by mutableStateOf<Map<VoiceModelLanguage, VoiceModelDownloadState>>(
+            mapOf(
+                VoiceModelLanguage.SPANISH to VoiceModelDownloadState.NotDownloaded,
+                VoiceModelLanguage.ENGLISH to VoiceModelDownloadState.Ready(
+                    VoiceModelLanguage.ENGLISH.totalBytes,
+                ),
+            ),
+        )
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Column(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .verticalScroll(rememberScrollState())
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        VoiceDictationSettingsCard(
+                            selectedMode = VoiceEngineMode.OFFLINE_MOONSHINE,
+                            modelStates = states,
+                            onSelectMode = {},
+                            onDownload = {},
+                            onCancelDownload = {},
+                            onDelete = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle {
+                    config = UiConfig(locale, fontScale)
+                    states = mapOf(
+                        VoiceModelLanguage.SPANISH to VoiceModelDownloadState.Downloading(
+                            progressPercent = 47,
+                            downloadedBytes = 15_000_000L,
+                            totalBytes = VoiceModelLanguage.SPANISH.totalBytes,
+                        ),
+                        VoiceModelLanguage.ENGLISH to VoiceModelDownloadState.Ready(
+                            VoiceModelLanguage.ENGLISH.totalBytes,
+                        ),
+                    )
+                }
+                compose.waitForIdle()
+                compose.onNodeWithTag("voice-engine-system", useUnmergedTree = true).performScrollTo()
+                val sysBounds = compose.onNodeWithTag("voice-engine-system", useUnmergedTree = true)
+                    .fetchSemanticsNode().boundsInRoot
+                assertTrue(
+                    "voice-engine-system collapsed at scale $fontScale",
+                    sysBounds.width / TEST_DENSITY >= 280f,
+                )
+                compose.onNodeWithTag("voice-engine-moonshine", useUnmergedTree = true).performScrollTo()
+                val offBounds = compose.onNodeWithTag("voice-engine-moonshine", useUnmergedTree = true)
+                    .fetchSemanticsNode().boundsInRoot
+                assertTrue(
+                    "voice-engine-moonshine collapsed at scale $fontScale",
+                    offBounds.width / TEST_DENSITY >= 280f,
+                )
+                compose.onNodeWithTag("voice-pack-es-action", useUnmergedTree = true).performScrollTo()
+                assertControlFits("voice-pack-es-action", fontScale)
+                compose.onNodeWithTag("voice-pack-en-action", useUnmergedTree = true).performScrollTo()
+                assertControlFits("voice-pack-en-action", fontScale)
+
+                // Also validate NotDownloaded button width/height.
+                compose.runOnIdle {
+                    states = mapOf(
+                        VoiceModelLanguage.SPANISH to VoiceModelDownloadState.NotDownloaded,
+                        VoiceModelLanguage.ENGLISH to VoiceModelDownloadState.NotDownloaded,
+                    )
+                }
+                compose.waitForIdle()
+                compose.onNodeWithTag("voice-pack-es-action", useUnmergedTree = true).performScrollTo()
+                assertControlFits("voice-pack-es-action", fontScale)
+                compose.onNodeWithTag("voice-pack-en-action", useUnmergedTree = true).performScrollTo()
+                assertControlFits("voice-pack-en-action", fontScale)
             }
         }
     }

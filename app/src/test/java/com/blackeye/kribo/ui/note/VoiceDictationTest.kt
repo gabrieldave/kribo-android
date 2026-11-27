@@ -9,7 +9,10 @@ import com.blackeye.kribo.data.NoteRepository
 import com.blackeye.kribo.data.blocks.ParagraphBlock
 import com.blackeye.kribo.data.seedDefaultFolders
 import com.blackeye.kribo.ocr.AttachmentStore
+import com.blackeye.kribo.ui.preferences.UiPreferences
+import com.blackeye.kribo.ui.preferences.VoiceEngineMode
 import com.blackeye.kribo.ui.settings.AppLanguage
+import com.blackeye.kribo.voice.VoiceModelManager
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
@@ -55,6 +58,54 @@ class VoiceDictationTest {
         assertEquals("en-US", resolveDictationLanguageTag(AppLanguage.ENGLISH, Locale("es", "MX")))
         assertEquals("en-GB", resolveDictationLanguageTag(AppLanguage.ENGLISH, Locale.UK))
         assertEquals("es-AR", resolveDictationLanguageTag(AppLanguage.SYSTEM, Locale("es", "AR")))
+    }
+
+    @Test
+    fun pcm16ToNormalizedFloatScalesCleanlyIntoUnitRange() {
+        val pcm = shortArrayOf(0, Short.MAX_VALUE, Short.MIN_VALUE, 16_384, -16_384)
+        val floats = pcm16ToNormalizedFloat(pcm, 5)
+        assertEquals(5, floats.size)
+        assertEquals(0f, floats[0], 0.0001f)
+        assertEquals(32767f / 32768f, floats[1], 0.0001f)
+        assertEquals(-1f, floats[2], 0.0001f)
+        assertEquals(0.5f, floats[3], 0.0001f)
+        assertEquals(-0.5f, floats[4], 0.0001f)
+    }
+
+    @Test
+    fun offlineMoonshineEngineReportsModelMissingWhenPackNotInstalled() {
+        val manager = VoiceModelManager(File(root, "voice_models"))
+        var reportedError: DictationError? = null
+        var lastState: DictationState? = null
+        val engine = MoonshineOfflineDictationEngine(
+            modelManager = manager,
+            callbacks = object : VoiceDictationCallbacks {
+                override fun onPartial(text: String) = Unit
+                override fun onFinal(text: String) = Unit
+                override fun onStateChange(state: DictationState) {
+                    lastState = state
+                }
+
+                override fun onError(error: DictationError) {
+                    reportedError = error
+                }
+            },
+            mainPoster = { it() },
+        )
+        engine.start(AppLanguage.SPANISH)
+        assertEquals(DictationError.MODEL_MISSING, reportedError)
+        assertEquals(DictationState.IDLE, lastState)
+        engine.destroy()
+    }
+
+    @Test
+    fun voiceEnginePreferenceDefaultsToSystemAndPersistsOfflineMode() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = UiPreferences(context)
+        assertEquals(VoiceEngineMode.SYSTEM, prefs.voiceEngineMode.value)
+        prefs.setVoiceEngineMode(VoiceEngineMode.OFFLINE_MOONSHINE)
+        assertEquals(VoiceEngineMode.OFFLINE_MOONSHINE, UiPreferences(context).voiceEngineMode.value)
+        prefs.setVoiceEngineMode(VoiceEngineMode.SYSTEM)
     }
 
     @Test

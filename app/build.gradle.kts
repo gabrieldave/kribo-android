@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
@@ -46,8 +47,8 @@ android {
         applicationId = "com.blackeye.kribo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.0.19"
+        versionCode = 21
+        versionName = "1.0.20"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -113,6 +114,12 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // Both onnxruntime-android (full 1.23.2 opset) and moonshine-voice (stripped 1.23.2)
+            // bundle libonnxruntime.so; the post-merge hook below guarantees Microsoft's full
+            // libonnxruntime.so (required by PP-OCRv5, UVDoc and Moonshine) is always packaged.
+            pickFirsts += listOf("lib/*/libonnxruntime.so")
+        }
     }
 
     androidResources {
@@ -165,6 +172,9 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.onnxruntime.android)
+    implementation(libs.moonshine.voice) {
+        exclude(group = "com.google.android.material", module = "material")
+    }
     implementation(libs.mlkit.document.scanner)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.play.services.auth)
@@ -194,4 +204,44 @@ if (!hasReleaseSigning) {
         "Kribo: release signing material not found. Set ANDROID_KEYSTORE_PATH / ANDROID_KEYSTORE_PASSWORD / " +
             "ANDROID_KEY_ALIAS (or ANDROID_KEYSTORE_ALIAS), or provide ~/.blackeye-keys/android/keystore.env.",
     )
+}
+
+// Deterministic native library guard: ensure Microsoft's full onnxruntime-android 1.23.2
+// libonnxruntime.so (never moonshine-voice's stripped copy) is packaged in every variant so
+// PP-OCRv5, UVDoc and Moonshine share the exact same 16 KB-aligned VERS_1.23.2 runtime.
+afterEvaluate {
+    listOf("Debug", "Release").forEach { variant ->
+        val mergeTask = tasks.findByName("merge${variant}NativeLibs") ?: return@forEach
+        val runtimeClasspath = configurations.findByName("${variant.lowercase()}RuntimeClasspath") ?: return@forEach
+        val ortAarFiles = runtimeClasspath.incoming.artifactView {
+            componentFilter { id ->
+                id is org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
+                    id.group == "com.microsoft.onnxruntime" &&
+                    id.module == "onnxruntime-android"
+            }
+        }.files
+        val mergedRootDir = layout.buildDirectory
+            .dir("intermediates/merged_native_libs/${variant.lowercase()}/merge${variant}NativeLibs/out/lib")
+            .get()
+            .asFile
+        mergeTask.inputs.files(ortAarFiles)
+        mergeTask.doLast {
+            val ortAar = ortAarFiles.singleFile
+            ZipFile(ortAar).use { zip ->
+                listOf("arm64-v8a", "armeabi-v7a").forEach { abi ->
+                    val entry = zip.getEntry("jni/$abi/libonnxruntime.so")
+                        ?: error("Kribo native guard: missing jni/$abi/libonnxruntime.so in ${ortAar.name}")
+                    val target = File(mergedRootDir, "$abi/libonnxruntime.so")
+                    if (target.isFile && target.length() != entry.size) {
+                        zip.getInputStream(entry).use { input ->
+                            target.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                    check(target.isFile && target.length() == entry.size) {
+                        "Kribo native guard: expected full libonnxruntime.so (${entry.size} B) for $abi, got ${target.length()} B"
+                    }
+                }
+            }
+        }
+    }
 }

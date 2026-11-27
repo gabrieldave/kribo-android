@@ -84,6 +84,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -126,6 +127,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -225,7 +227,12 @@ import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
 import com.blackeye.kribo.ui.components.AutoSyncStatusIcon
 import com.blackeye.kribo.ui.components.StatusPill
+import com.blackeye.kribo.ui.preferences.VoiceEngineMode
 import com.blackeye.kribo.ui.settings.AppLanguage
+import com.blackeye.kribo.voice.VoiceDownloadError
+import com.blackeye.kribo.voice.VoiceModelDownloadState
+import com.blackeye.kribo.voice.VoiceModelLanguage
+import com.blackeye.kribo.voice.resolveVoiceModelLanguage
 import com.blackeye.kribo.ui.components.TooltipAction
 import com.blackeye.kribo.ui.components.hideKeyboardOnScroll
 import com.blackeye.kribo.ui.components.isImeVisible
@@ -327,10 +334,15 @@ fun NoteEditorScreen(
     val dictationDeniedMessage = stringResource(R.string.dictation_permission_denied)
     val dictationUnavailableMessage = stringResource(R.string.dictation_unavailable)
     val dictationNoMatchMessage = stringResource(R.string.dictation_no_match)
+    val dictationAudioErrorMessage = stringResource(R.string.dictation_audio_error)
     val dictationErrorMessage = stringResource(R.string.dictation_error)
+    val voiceEngineMode by container.uiPreferences.voiceEngineMode.collectAsStateWithLifecycle()
+    val voiceModelStates by container.voiceModelManager.states.collectAsStateWithLifecycle()
     var dictationState by remember { mutableStateOf(DictationState.IDLE) }
     var dictationPartial by remember { mutableStateOf("") }
     var showMicRationale by remember { mutableStateOf(false) }
+    var missingVoiceModelLang by remember { mutableStateOf<VoiceModelLanguage?>(null) }
+    var pendingDictationMode by remember { mutableStateOf(VoiceEngineMode.SYSTEM) }
 
     val showDictationFeedback: (String) -> Unit = { feedback ->
         scope.launch {
@@ -342,17 +354,25 @@ fun NoteEditorScreen(
         }
     }
 
-    val dictator = remember(context) {
+    val dictator = remember(context, container) {
         VoiceDictator(
             context = context,
+            modelManager = container.voiceModelManager,
+            modeProvider = { container.uiPreferences.voiceEngineMode.value },
             onPartial = { dictationPartial = it },
             onFinal = { spoken -> viewModel.insertDictatedText(spoken) },
             onStateChange = { dictationState = it },
             onError = { error ->
+                if (error == DictationError.MODEL_MISSING) {
+                    missingVoiceModelLang = resolveVoiceModelLanguage(AppLanguage.current())
+                    return@VoiceDictator
+                }
                 val message = when (error) {
                     DictationError.UNAVAILABLE -> dictationUnavailableMessage
                     DictationError.PERMISSION_DENIED -> dictationDeniedMessage
                     DictationError.NO_MATCH -> dictationNoMatchMessage
+                    DictationError.AUDIO_ERROR -> dictationAudioErrorMessage
+                    DictationError.MODEL_MISSING -> dictationErrorMessage
                     DictationError.GENERAL -> dictationErrorMessage
                 }
                 showDictationFeedback(message)
@@ -363,11 +383,11 @@ fun NoteEditorScreen(
         onDispose { dictator.destroy() }
     }
 
-    val startDictation: () -> Unit = {
-        if (!dictator.isAvailable()) {
+    val startDictationWithMode: (VoiceEngineMode) -> Unit = { mode ->
+        if (!dictator.isAvailableFor(mode)) {
             showDictationFeedback(dictationUnavailableMessage)
         } else {
-            dictator.start(resolveDictationLanguageTag(AppLanguage.current()))
+            dictator.startWithMode(mode, AppLanguage.current())
         }
     }
 
@@ -375,16 +395,15 @@ fun NoteEditorScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            startDictation()
+            startDictationWithMode(pendingDictationMode)
         } else {
             showDictationFeedback(dictationDeniedMessage)
         }
     }
 
-    val onToggleDictation: () -> Unit = {
-        if (dictationState == DictationState.LISTENING) {
-            dictator.stop()
-        } else if (!dictator.isAvailable()) {
+    val requestPermissionAndStart: (VoiceEngineMode) -> Unit = { mode ->
+        pendingDictationMode = mode
+        if (!dictator.isAvailableFor(mode)) {
             showDictationFeedback(dictationUnavailableMessage)
         } else {
             val granted = ContextCompat.checkSelfPermission(
@@ -392,9 +411,28 @@ fun NoteEditorScreen(
                 Manifest.permission.RECORD_AUDIO,
             ) == PackageManager.PERMISSION_GRANTED
             if (granted) {
-                startDictation()
+                startDictationWithMode(mode)
             } else {
                 showMicRationale = true
+            }
+        }
+    }
+
+    val onToggleDictation: () -> Unit = {
+        when (dictationState) {
+            DictationState.LISTENING -> dictator.stop()
+            DictationState.LOADING -> dictator.cancel()
+            DictationState.IDLE -> {
+                if (voiceEngineMode == VoiceEngineMode.OFFLINE_MOONSHINE) {
+                    val modelLang = resolveVoiceModelLanguage(AppLanguage.current())
+                    if (!container.voiceModelManager.isInstalled(modelLang)) {
+                        missingVoiceModelLang = modelLang
+                    } else {
+                        requestPermissionAndStart(VoiceEngineMode.OFFLINE_MOONSHINE)
+                    }
+                } else {
+                    requestPermissionAndStart(VoiceEngineMode.SYSTEM)
+                }
             }
         }
     }
@@ -771,7 +809,8 @@ fun NoteEditorScreen(
                         activeStyles = viewModel.activeTypingStyles,
                         formatMode = formatMode,
                         onToggleFormatMode = { formatMode = !formatMode },
-                        isDictating = dictationState == DictationState.LISTENING,
+                        isDictating = dictationState != DictationState.IDLE,
+                        isDictatingLoading = dictationState == DictationState.LOADING,
                         dictationPartial = dictationPartial,
                         onToggleDictation = onToggleDictation,
                     )
@@ -1193,6 +1232,146 @@ fun NoteEditorScreen(
             )
         }
     }
+
+    missingVoiceModelLang?.let { missingLang ->
+        val packState = voiceModelStates[missingLang] ?: VoiceModelDownloadState.NotDownloaded
+        val langLabel = stringResource(
+            if (missingLang == VoiceModelLanguage.SPANISH) {
+                R.string.voice_lang_spanish
+            } else {
+                R.string.voice_lang_english
+            },
+        )
+        LaunchedEffect(packState, missingLang) {
+            if (packState is VoiceModelDownloadState.Ready) {
+                missingVoiceModelLang = null
+                requestPermissionAndStart(VoiceEngineMode.OFFLINE_MOONSHINE)
+            }
+        }
+        AppModal(
+            onDismissRequest = { missingVoiceModelLang = null },
+            title = stringResource(R.string.voice_missing_title, langLabel),
+            dismissLabel = stringResource(R.string.action_close),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.voice_missing_body,
+                        langLabel,
+                        missingLang.approxMb,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                when (packState) {
+                    is VoiceModelDownloadState.Downloading -> {
+                        LinearProgressIndicator(
+                            progress = { packState.progressPercent / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.voice_pack_status_downloading,
+                                packState.progressPercent,
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        OutlinedButton(
+                            onClick = { container.voiceModelManager.cancelDownload(missingLang) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("voice-missing-cancel"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.action_cancel),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+
+                    else -> {
+                        if (packState is VoiceModelDownloadState.Error) {
+                            Text(
+                                text = stringResource(
+                                    when (packState.kind) {
+                                        VoiceDownloadError.NO_SPACE -> R.string.voice_download_error_space
+                                        VoiceDownloadError.INTEGRITY -> R.string.voice_download_error_integrity
+                                        else -> R.string.voice_download_error_network
+                                    },
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Button(
+                            onClick = { container.voiceModelManager.startDownload(missingLang) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("voice-missing-download"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(
+                                    R.string.voice_missing_download_now,
+                                    missingLang.approxMb,
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        missingVoiceModelLang = null
+                        requestPermissionAndStart(VoiceEngineMode.SYSTEM)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("voice-missing-use-system"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.voice_missing_use_system),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1285,6 +1464,7 @@ internal fun EditorToolbar(
     formatMode: Boolean = false,
     onToggleFormatMode: () -> Unit = {},
     isDictating: Boolean = false,
+    isDictatingLoading: Boolean = false,
     dictationPartial: String = "",
     onToggleDictation: () -> Unit = {},
 ) {
@@ -1294,6 +1474,7 @@ internal fun EditorToolbar(
     Column(modifier = Modifier.fillMaxWidth()) {
         AnimatedVisibility(visible = isDictating) {
             DictationListeningBanner(
+                isLoading = isDictatingLoading,
                 partialText = dictationPartial,
                 onStop = onToggleDictation,
             )
@@ -1396,6 +1577,7 @@ internal fun EditorToolbar(
 
 @Composable
 private fun DictationListeningBanner(
+    isLoading: Boolean = false,
     partialText: String,
     onStop: () -> Unit,
 ) {
@@ -1426,14 +1608,26 @@ private fun DictationListeningBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Mic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha),
-                modifier = Modifier.size(18.dp),
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             Text(
-                text = partialText.ifBlank { stringResource(R.string.dictation_listening) },
+                text = when {
+                    isLoading -> stringResource(R.string.dictation_loading)
+                    partialText.isNotBlank() -> partialText
+                    else -> stringResource(R.string.dictation_listening)
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,

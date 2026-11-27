@@ -24,6 +24,7 @@ import com.blackeye.kribo.scan.DocumentPageProcessor
 import com.blackeye.kribo.security.KeystoreSecureStore
 import com.blackeye.kribo.transfer.WifiTransferServer
 import com.blackeye.kribo.ui.preferences.UiPreferences
+import com.blackeye.kribo.voice.VoiceModelManager
 import java.io.File
 
 /**
@@ -122,6 +123,11 @@ class AppContainer(context: Context) {
         )
     }
 
-    /** UI-only preferences (theme + home layout); never touches Room, OCR or secure storage. */
+    /** UI-only preferences (theme + home layout + dictation engine); never touches Room, OCR or secure storage. */
     val uiPreferences: UiPreferences by lazy { UiPreferences(appContext) }
+
+    /** On-demand Moonshine MIT streaming voice pack manager (`filesDir/voice_models/<lang>/`). */
+    val voiceModelManager: VoiceModelManager by lazy {
+        VoiceModelManager(File(appContext.filesDir, VoiceModelManager.MODELS_DIR_NAME))
+    }
 }

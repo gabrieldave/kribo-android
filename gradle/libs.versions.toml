@@ -14,7 +14,8 @@ billing = "8.3.0"
 junit = "4.13.2"
 coil = "2.7.0"
 serialization = "1.9.0"
-onnxruntime = "1.24.3"
+onnxruntime = "1.23.2"
+moonshineVoice = "0.1.6"
 mlkitDocScanner = "16.0.0"
 mlkitTextRecognition = "16.0.1"
 playServicesAuth = "21.6.0"
@@ -55,6 +56,7 @@ zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" 
 
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+moonshine-voice = { group = "ai.moonshine", name = "moonshine-voice", version.ref = "moonshineVoice" }
 mlkit-document-scanner = { group = "com.google.android.gms", name = "play-services-mlkit-document-scanner", version.ref = "mlkitDocScanner" }
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
