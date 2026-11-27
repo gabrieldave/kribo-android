@@ -245,6 +245,14 @@
     <string name="drive_message_config">La configuración OAuth aún no está lista. Revisa el SHA-1 de firma de la app.</string>
     <string name="drive_message_unknown">No se pudo sincronizar. Inténtalo de nuevo.</string>
 
+    <string name="kribo_web_title">Kribo Web (Mac y Windows)</string>
+    <string name="kribo_web_card_body">Al sincronizar con Google Drive puedes ver y editar tus notas en tu computadora en %1$s e instalarla como app.</string>
+    <string name="kribo_web_open_cd">Abrir Kribo Web en el navegador</string>
+    <string name="kribo_web_copy_link">Copiar enlace</string>
+    <string name="kribo_web_copied">Enlace copiado</string>
+    <string name="kribo_web_send_pc">Enviar a mi PC</string>
+    <string name="kribo_web_share_text">Abre Kribo Web en tu computadora (Mac o Windows) e inicia sesión con la misma cuenta de Google para acceder a tus notas sincronizadas: %1$s</string>
+
     <string name="security_unauthorized_title">Aplicación no autorizada</string>
     <string name="security_unauthorized_body">Esta copia de Kribo no está firmada por BLACK EYE. Descárgala desde Google Play.</string>
     <string name="settings_terms_title">Términos del servicio</string>
@@ -403,6 +411,7 @@
     <string name="guide_topic_drive_wifi_only">Solo con Wi-Fi evita usar datos móviles</string>
     <string name="guide_topic_drive_restore">Para restaurar, conecta la misma cuenta y toca Sincronizar ahora</string>
     <string name="guide_topic_drive_privacy">Kribo solo ve su propia carpeta, nunca el resto de tu Drive</string>
+    <string name="guide_topic_drive_web">Abre kribo.iareal.net/app en Mac o Windows con la misma cuenta de Google para acceder a tus notas e instalarla como app</string>
     <string name="guide_topic_export_title">Exportar a PDF</string>
     <string name="guide_topic_export_intro">Comparte una nota como documento listo para imprimir o archivar.</string>
     <string name="guide_topic_export_item_1">El nombre del archivo usa el título de la nota</string>

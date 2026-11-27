@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import com.blackeye.kribo.ui.home.QuickCaptureBar
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.settings.AppLanguage
 import com.blackeye.kribo.ui.settings.CompactAppearanceCard
+import com.blackeye.kribo.ui.settings.KriboWebSettingsRow
 import com.blackeye.kribo.ui.transfer.WifiTransferContent
 import com.blackeye.kribo.transfer.WifiTransferServer
 import com.blackeye.kribo.ui.note.AttachmentActionsRow
@@ -496,6 +499,9 @@ class LayoutOverflowTest {
                 compose.runOnIdle { config = UiConfig(locale, fontScale) }
                 compose.waitForIdle()
                 assertControlFits("drive-connect", fontScale)
+                assertControlFits("drive-web-url", fontScale)
+                assertControlFits("drive-web-copy", fontScale)
+                assertControlFits("drive-web-send", fontScale)
             }
         }
     }
@@ -510,9 +516,10 @@ class LayoutOverflowTest {
                 LocalDensity provides Density(TEST_DENSITY, config.fontScale),
             ) {
                 KriboTheme {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .width(360.dp)
+                            .verticalScroll(rememberScrollState())
                             .background(MaterialTheme.colorScheme.background),
                     ) {
                         DriveSyncContent(
@@ -539,10 +546,58 @@ class LayoutOverflowTest {
             for (locale in listOf(Locale("es"), Locale("en"))) {
                 compose.runOnIdle { config = UiConfig(locale, fontScale) }
                 compose.waitForIdle()
+                compose.onNodeWithTag("drive-sync-now", useUnmergedTree = true).performScrollTo()
                 assertControlFits("drive-sync-now", fontScale)
+                compose.onNodeWithTag("drive-auto", useUnmergedTree = true).performScrollTo()
                 assertControlFits("drive-auto", fontScale)
+                compose.onNodeWithTag("drive-wifi", useUnmergedTree = true).performScrollTo()
                 assertControlFits("drive-wifi", fontScale)
+                compose.onNodeWithTag("drive-disconnect", useUnmergedTree = true).performScrollTo()
                 assertControlFits("drive-disconnect", fontScale)
+                compose.onNodeWithTag("drive-web-url", useUnmergedTree = true).performScrollTo()
+                assertControlFits("drive-web-url", fontScale)
+                compose.onNodeWithTag("drive-web-copy", useUnmergedTree = true).performScrollTo()
+                assertControlFits("drive-web-copy", fontScale)
+                compose.onNodeWithTag("drive-web-send", useUnmergedTree = true).performScrollTo()
+                assertControlFits("drive-web-send", fontScale)
+            }
+        }
+    }
+
+    @Test
+    fun settingsKriboWebRowFits360Dp() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Box(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        KriboWebSettingsRow(
+                            onOpen = {},
+                            onCopy = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                assertControlFits("settings-kribo-web-copy", fontScale, maxHeightDp = 64f)
+                val rowBounds = compose.onNodeWithTag("settings-kribo-web-row", useUnmergedTree = true)
+                    .fetchSemanticsNode().boundsInRoot
+                val rowWidthDp = rowBounds.width / TEST_DENSITY
+                val rowHeightDp = rowBounds.height / TEST_DENSITY
+                assertTrue("settings-kribo-web-row collapsed to ${rowWidthDp}dp", rowWidthDp >= 300f)
+                assertTrue("settings-kribo-web-row squished to ${rowHeightDp}dp at scale $fontScale", rowHeightDp <= 140f)
             }
         }
     }

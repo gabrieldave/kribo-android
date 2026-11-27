@@ -142,6 +142,7 @@ enum class GuideTopic(
             R.string.guide_topic_drive_wifi_only,
             R.string.guide_topic_drive_restore,
             R.string.guide_topic_drive_privacy,
+            R.string.guide_topic_drive_web,
         ),
         icon = Icons.Rounded.Cloud,
         pro = true,

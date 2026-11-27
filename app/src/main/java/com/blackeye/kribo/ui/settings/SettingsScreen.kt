@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.rounded.LaptopMac
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MicNone
 import androidx.compose.material.icons.rounded.Palette
@@ -47,6 +49,7 @@ import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -82,6 +85,7 @@ import com.blackeye.kribo.billing.BillingUiState
 import com.blackeye.kribo.billing.ProLimits
 import com.blackeye.kribo.ui.billing.PaywallReason
 import com.blackeye.kribo.ui.billing.ProPaywallSheet
+import com.blackeye.kribo.ui.common.KriboWebLinks
 import com.blackeye.kribo.ui.common.displayNameFor
 import com.blackeye.kribo.ui.components.AppModal
 import com.blackeye.kribo.ui.components.AppScreen
@@ -259,6 +263,12 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            SettingsDivider()
+            KriboWebSettingsRow(
+                onOpen = { KriboWebLinks.openWebApp(context) },
+                onCopy = { KriboWebLinks.copyWebAppUrl(context) },
+            )
 
             SettingsDivider()
             Row(
@@ -561,9 +571,59 @@ private fun openLegalPage(context: Context, spanishPath: String, englishPath: St
     val language = AppLanguage.current()
     val spanish = language == AppLanguage.SPANISH ||
         (language == AppLanguage.SYSTEM && Locale.getDefault().language.equals("es", ignoreCase = true))
-    val url = "https://kribo.iareal.net" + if (spanish) spanishPath else englishPath
+    val url = KriboWebLinks.BASE_URL + if (spanish) spanishPath else englishPath
     runCatching {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+}
+
+@Composable
+internal fun KriboWebSettingsRow(
+    onOpen: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = stringResource(R.string.kribo_web_open_cd),
+                onClick = onOpen,
+            )
+            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)
+            .testTag("settings-kribo-web-row"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconTile(Icons.Rounded.LaptopMac)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.kribo_web_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = KriboWebLinks.WEB_APP_DISPLAY,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        IconButton(
+            onClick = onCopy,
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("settings-kribo-web-copy"),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.ContentCopy,
+                contentDescription = stringResource(R.string.kribo_web_copy_link),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

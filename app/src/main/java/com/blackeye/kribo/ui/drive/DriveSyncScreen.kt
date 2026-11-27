@@ -4,9 +4,13 @@ import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,10 +20,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.LaptopMac
 import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,9 +47,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +61,7 @@ import com.blackeye.kribo.R
 import com.blackeye.kribo.drive.DriveAuthOutcome
 import com.blackeye.kribo.drive.DriveSyncError
 import com.blackeye.kribo.drive.DriveSyncResult
+import com.blackeye.kribo.ui.common.KriboWebLinks
 import com.blackeye.kribo.ui.common.findActivity
 import com.blackeye.kribo.ui.common.formatNoteDate
 import com.blackeye.kribo.ui.components.AppModal
@@ -88,6 +101,7 @@ fun DriveSyncScreen(
     var syncTrigger by remember { mutableIntStateOf(0) }
     var showDisconnect by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    var webLinkCopied by remember { mutableStateOf(false) }
 
     val authLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -207,6 +221,13 @@ fun DriveSyncScreen(
                 if (autoSync) scheduler.update()
             },
             onDisconnect = { showDisconnect = true },
+            webLinkCopied = webLinkCopied,
+            onOpenWeb = { KriboWebLinks.openWebApp(context) },
+            onCopyWebLink = {
+                KriboWebLinks.copyWebAppUrl(context)
+                webLinkCopied = true
+            },
+            onSendWebToPc = { KriboWebLinks.shareWebAppToPc(context) },
         )
     }
 
@@ -241,6 +262,7 @@ fun DriveSyncScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun DriveSyncContent(
     connected: Boolean,
@@ -257,6 +279,10 @@ internal fun DriveSyncContent(
     onAutoChange: (Boolean) -> Unit,
     onWifiChange: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
+    webLinkCopied: Boolean = false,
+    onOpenWeb: () -> Unit = {},
+    onCopyWebLink: () -> Unit = {},
+    onSendWebToPc: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -419,6 +445,148 @@ internal fun DriveSyncContent(
                     MaterialTheme.colorScheme.error
                 },
             )
+        }
+
+        KriboWebDriveCard(
+            copied = webLinkCopied,
+            onOpenWeb = onOpenWeb,
+            onCopyLink = onCopyWebLink,
+            onSendToPc = onSendWebToPc,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KriboWebDriveCard(
+    copied: Boolean,
+    onOpenWeb: () -> Unit,
+    onCopyLink: () -> Unit,
+    onSendToPc: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("drive-web-card"),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.LaptopMac,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    text = stringResource(R.string.kribo_web_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            Text(
+                text = stringResource(R.string.kribo_web_card_body, KriboWebLinks.WEB_APP_DISPLAY),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = stringResource(R.string.kribo_web_open_cd),
+                        onClick = onOpenWeb,
+                    )
+                    .testTag("drive-web-url"),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = KriboWebLinks.WEB_APP_DISPLAY,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                        contentDescription = stringResource(R.string.kribo_web_open_cd),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onCopyLink,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("drive-web-copy"),
+                ) {
+                    Icon(
+                        imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(
+                            if (copied) R.string.kribo_web_copied else R.string.kribo_web_copy_link,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Button(
+                    onClick = onSendToPc,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("drive-web-send"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.kribo_web_send_pc),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }
