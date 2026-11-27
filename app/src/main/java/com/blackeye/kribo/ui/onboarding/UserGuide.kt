@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LaptopMac
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Wifi
@@ -108,6 +110,17 @@ enum class GuideTopic(
         ),
         icon = Icons.Rounded.Edit,
     ),
+    VOICE_DICTATION(
+        drawableRes = R.drawable.guide_voice_dictation,
+        titleRes = R.string.guide_topic_voice_title,
+        introRes = R.string.guide_topic_voice_intro,
+        items = listOf(
+            R.string.guide_topic_voice_item_1,
+            R.string.guide_topic_voice_item_2,
+            R.string.guide_topic_voice_item_3,
+        ),
+        icon = Icons.Rounded.Mic,
+    ),
     OCR_TIPS(
         drawableRes = R.drawable.guide_ocr_tips,
         titleRes = R.string.guide_topic_ocr_title,
@@ -146,6 +159,19 @@ enum class GuideTopic(
             R.string.guide_topic_drive_web,
         ),
         icon = Icons.Rounded.Cloud,
+        pro = true,
+    ),
+    WEB_AUTOSYNC(
+        drawableRes = R.drawable.guide_web_autosync,
+        titleRes = R.string.guide_topic_web_autosync_title,
+        introRes = R.string.guide_topic_web_autosync_intro,
+        items = listOf(
+            R.string.guide_topic_web_autosync_item_1,
+            R.string.guide_topic_web_autosync_item_2,
+            R.string.guide_topic_web_autosync_item_3,
+            R.string.guide_topic_web_autosync_item_4,
+        ),
+        icon = Icons.Rounded.LaptopMac,
         pro = true,
     ),
     EXPORT_PDF(
@@ -299,7 +325,7 @@ fun UserGuideScreen(onFinish: () -> Unit) {
     }
 }
 
-/** Full reference manual: seven enriched cards plus the Free / Pro summary. */
+/** Full reference manual: nine illustrated cards plus the Free / Pro summary. */
 @Composable
 fun UserManualScreen(onBack: () -> Unit) {
     AppScreen(
@@ -434,9 +460,10 @@ private fun BulletLine(text: String) {
 }
 
 /**
- * Looks up `guide_onboarding`, `guide_home`, `guide_editor_blocks`, `guide_ocr_tips`,
- * `guide_wifi_transfer`, `guide_google_drive` and `guide_export_pdf` in drawable-nodpi.
- * Missing assets fall back to a compact Compose visual, never to an empty space.
+ * Renders the static WebP illustration in `drawable-nodpi` for each manual card:
+ * `guide_onboarding`, `guide_home`, `guide_editor_flow`, `guide_voice_dictation`,
+ * `guide_ocr_tips`, `guide_wifi_transfer`, `guide_google_drive`, `guide_web_autosync`,
+ * and `guide_export_pdf`.
  */
 @Composable
 private fun GuideImageSlot(topic: GuideTopic) {

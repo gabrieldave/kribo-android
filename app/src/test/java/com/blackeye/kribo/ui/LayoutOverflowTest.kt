@@ -31,6 +31,8 @@ import com.blackeye.kribo.ui.drive.DriveSyncContent
 import com.blackeye.kribo.ui.drive.DriveSyncMessage
 import com.blackeye.kribo.ui.home.BulkSelectionBar
 import com.blackeye.kribo.ui.home.QuickCaptureBar
+import com.blackeye.kribo.ui.onboarding.GuideTopic
+import com.blackeye.kribo.ui.onboarding.GuideTopicCard
 import com.blackeye.kribo.ui.preferences.AppTheme
 import com.blackeye.kribo.ui.preferences.VoiceEngineMode
 import com.blackeye.kribo.ui.settings.AppLanguage
@@ -650,6 +652,7 @@ class LayoutOverflowTest {
     @Test
     fun voiceDictationSettingsCardFits360DpInBothLanguages() {
         var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        var mode by mutableStateOf(VoiceEngineMode.SYSTEM)
         var states by mutableStateOf<Map<VoiceModelLanguage, VoiceModelDownloadState>>(
             mapOf(
                 VoiceModelLanguage.SPANISH to VoiceModelDownloadState.NotDownloaded,
@@ -672,9 +675,9 @@ class LayoutOverflowTest {
                             .background(MaterialTheme.colorScheme.background),
                     ) {
                         VoiceDictationSettingsCard(
-                            selectedMode = VoiceEngineMode.OFFLINE_MOONSHINE,
+                            selectedMode = mode,
                             modelStates = states,
-                            onSelectMode = {},
+                            onSelectMode = { mode = it },
                             onDownload = {},
                             onCancelDownload = {},
                             onDelete = {},
@@ -686,18 +689,10 @@ class LayoutOverflowTest {
 
         for (fontScale in listOf(1f, 2f)) {
             for (locale in listOf(Locale("es"), Locale("en"))) {
+                // 1. Default System mode: compact collapsed toggle row, language packs hidden by default.
                 compose.runOnIdle {
                     config = UiConfig(locale, fontScale)
-                    states = mapOf(
-                        VoiceModelLanguage.SPANISH to VoiceModelDownloadState.Downloading(
-                            progressPercent = 47,
-                            downloadedBytes = 15_000_000L,
-                            totalBytes = VoiceModelLanguage.SPANISH.totalBytes,
-                        ),
-                        VoiceModelLanguage.ENGLISH to VoiceModelDownloadState.Ready(
-                            VoiceModelLanguage.ENGLISH.totalBytes,
-                        ),
-                    )
+                    mode = VoiceEngineMode.SYSTEM
                 }
                 compose.waitForIdle()
                 compose.onNodeWithTag("voice-engine-system", useUnmergedTree = true).performScrollTo()
@@ -714,12 +709,36 @@ class LayoutOverflowTest {
                     "voice-engine-moonshine collapsed at scale $fontScale",
                     offBounds.width / TEST_DENSITY >= 280f,
                 )
+                compose.onNodeWithTag("voice-packs-toggle", useUnmergedTree = true).performScrollTo()
+                assertControlFits("voice-packs-toggle", fontScale, maxHeightDp = 96f)
+                assertEquals(
+                    "Packs should start collapsed when System mode is active",
+                    0,
+                    compose.onAllNodesWithTag("voice-pack-es-action", useUnmergedTree = true)
+                        .fetchSemanticsNodes().size,
+                )
+
+                // 2. Offline backup mode: packs expand automatically into compact rows.
+                compose.runOnIdle {
+                    mode = VoiceEngineMode.OFFLINE_MOONSHINE
+                    states = mapOf(
+                        VoiceModelLanguage.SPANISH to VoiceModelDownloadState.Downloading(
+                            progressPercent = 47,
+                            downloadedBytes = 15_000_000L,
+                            totalBytes = VoiceModelLanguage.SPANISH.totalBytes,
+                        ),
+                        VoiceModelLanguage.ENGLISH to VoiceModelDownloadState.Ready(
+                            VoiceModelLanguage.ENGLISH.totalBytes,
+                        ),
+                    )
+                }
+                compose.waitForIdle()
                 compose.onNodeWithTag("voice-pack-es-action", useUnmergedTree = true).performScrollTo()
                 assertControlFits("voice-pack-es-action", fontScale)
                 compose.onNodeWithTag("voice-pack-en-action", useUnmergedTree = true).performScrollTo()
                 assertControlFits("voice-pack-en-action", fontScale)
 
-                // Also validate NotDownloaded button width/height.
+                // 3. NotDownloaded state with compact OutlinedButtons on both languages.
                 compose.runOnIdle {
                     states = mapOf(
                         VoiceModelLanguage.SPANISH to VoiceModelDownloadState.NotDownloaded,
@@ -731,6 +750,48 @@ class LayoutOverflowTest {
                 assertControlFits("voice-pack-es-action", fontScale)
                 compose.onNodeWithTag("voice-pack-en-action", useUnmergedTree = true).performScrollTo()
                 assertControlFits("voice-pack-en-action", fontScale)
+            }
+        }
+    }
+
+    @Test
+    fun manualNewIllustratedCardsFit360DpInBothLanguages() {
+        var config by mutableStateOf(UiConfig(Locale("es"), 1f))
+        compose.setContent {
+            val context = remember(config.locale) { localized(baseContext, config.locale) }
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalDensity provides Density(TEST_DENSITY, config.fontScale),
+            ) {
+                KriboTheme {
+                    Column(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .verticalScroll(rememberScrollState())
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        GuideTopicCard(topic = GuideTopic.VOICE_DICTATION)
+                        GuideTopicCard(topic = GuideTopic.WEB_AUTOSYNC)
+                    }
+                }
+            }
+        }
+
+        val lanePx = 360f * TEST_DENSITY
+        for (fontScale in listOf(1f, 2f)) {
+            for (locale in listOf(Locale("es"), Locale("en"))) {
+                compose.runOnIdle { config = UiConfig(locale, fontScale) }
+                compose.waitForIdle()
+                listOf("guide-card-voice_dictation", "guide-card-web_autosync").forEach { tag ->
+                    compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+                    val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                        .fetchSemanticsNode().boundsInRoot
+                    val widthDp = bounds.width / TEST_DENSITY
+                    val heightDp = bounds.height / TEST_DENSITY
+                    assertTrue("$tag collapsed to ${widthDp}dp at scale $fontScale", widthDp >= 320f)
+                    assertTrue("$tag overflowed width at scale $fontScale", bounds.right <= lanePx + 1f)
+                    assertTrue("$tag unexpectedly empty height ${heightDp}dp", heightDp >= 220f)
+                }
             }
         }
     }

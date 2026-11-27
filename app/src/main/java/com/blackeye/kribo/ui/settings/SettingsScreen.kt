@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -564,7 +565,6 @@ private fun openLegalPage(context: Context, spanishPath: String, englishPath: St
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun VoiceDictationSettingsCard(
     selectedMode: VoiceEngineMode,
@@ -574,6 +574,9 @@ internal fun VoiceDictationSettingsCard(
     onCancelDownload: (VoiceModelLanguage) -> Unit,
     onDelete: (VoiceModelLanguage) -> Unit,
 ) {
+    var packsExpandedManually by rememberSaveable { mutableStateOf(false) }
+    val showPacks = selectedMode == VoiceEngineMode.OFFLINE_MOONSHINE || packsExpandedManually
+
     SettingsCard {
         Column(
             modifier = Modifier
@@ -590,8 +593,9 @@ internal fun VoiceDictationSettingsCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.settings_dictation_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = stringResource(R.string.settings_dictation_engine_header),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = stringResource(R.string.settings_dictation_subtitle),
@@ -600,8 +604,6 @@ internal fun VoiceDictationSettingsCard(
                     )
                 }
             }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
 
             VoiceEngineOptionRow(
                 title = stringResource(R.string.voice_engine_system_title),
@@ -620,32 +622,75 @@ internal fun VoiceDictationSettingsCard(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
 
-            Text(
-                text = stringResource(R.string.voice_packs_header),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            if (selectedMode == VoiceEngineMode.SYSTEM) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(role = Role.Button) {
+                            packsExpandedManually = !packsExpandedManually
+                        }
+                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                        .testTag("voice-packs-toggle"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.voice_packs_header),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = if (packsExpandedManually) {
+                            Icons.Rounded.ExpandLess
+                        } else {
+                            Icons.Rounded.ExpandMore
+                        },
+                        contentDescription = stringResource(
+                            if (packsExpandedManually) R.string.cd_collapse else R.string.cd_expand,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.voice_packs_header),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
 
-            VoiceLanguagePackCard(
-                language = VoiceModelLanguage.SPANISH,
-                languageName = stringResource(R.string.voice_lang_spanish),
-                state = modelStates[VoiceModelLanguage.SPANISH] ?: VoiceModelDownloadState.NotDownloaded,
-                cardTag = "voice-pack-es",
-                actionTag = "voice-pack-es-action",
-                onDownload = { onDownload(VoiceModelLanguage.SPANISH) },
-                onCancel = { onCancelDownload(VoiceModelLanguage.SPANISH) },
-                onDelete = { onDelete(VoiceModelLanguage.SPANISH) },
-            )
-            VoiceLanguagePackCard(
-                language = VoiceModelLanguage.ENGLISH,
-                languageName = stringResource(R.string.voice_lang_english),
-                state = modelStates[VoiceModelLanguage.ENGLISH] ?: VoiceModelDownloadState.NotDownloaded,
-                cardTag = "voice-pack-en",
-                actionTag = "voice-pack-en-action",
-                onDownload = { onDownload(VoiceModelLanguage.ENGLISH) },
-                onCancel = { onCancelDownload(VoiceModelLanguage.ENGLISH) },
-                onDelete = { onDelete(VoiceModelLanguage.ENGLISH) },
-            )
+            AnimatedVisibility(visible = showPacks) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    VoiceLanguagePackRow(
+                        language = VoiceModelLanguage.SPANISH,
+                        languageName = stringResource(R.string.voice_lang_spanish),
+                        state = modelStates[VoiceModelLanguage.SPANISH]
+                            ?: VoiceModelDownloadState.NotDownloaded,
+                        cardTag = "voice-pack-es",
+                        actionTag = "voice-pack-es-action",
+                        onDownload = { onDownload(VoiceModelLanguage.SPANISH) },
+                        onCancel = { onCancelDownload(VoiceModelLanguage.SPANISH) },
+                        onDelete = { onDelete(VoiceModelLanguage.SPANISH) },
+                    )
+                    VoiceLanguagePackRow(
+                        language = VoiceModelLanguage.ENGLISH,
+                        languageName = stringResource(R.string.voice_lang_english),
+                        state = modelStates[VoiceModelLanguage.ENGLISH]
+                            ?: VoiceModelDownloadState.NotDownloaded,
+                        cardTag = "voice-pack-en",
+                        actionTag = "voice-pack-en-action",
+                        onDownload = { onDownload(VoiceModelLanguage.ENGLISH) },
+                        onCancel = { onCancelDownload(VoiceModelLanguage.ENGLISH) },
+                        onDelete = { onDelete(VoiceModelLanguage.ENGLISH) },
+                    )
+                }
+            }
         }
     }
 }
@@ -705,9 +750,8 @@ private fun VoiceEngineOptionRow(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun VoiceLanguagePackCard(
+private fun VoiceLanguagePackRow(
     language: VoiceModelLanguage,
     languageName: String,
     state: VoiceModelDownloadState,
@@ -737,111 +781,142 @@ private fun VoiceLanguagePackCard(
             },
         )
     }
+    val statusColor = when (state) {
+        is VoiceModelDownloadState.Ready -> MaterialTheme.colorScheme.primary
+        is VoiceModelDownloadState.Error -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val largeFont = LocalDensity.current.fontScale >= 1.4f
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(cardTag),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = languageName,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodySmall,
-                color = when (state) {
-                    is VoiceModelDownloadState.Ready -> MaterialTheme.colorScheme.primary
-                    is VoiceModelDownloadState.Error -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            if (largeFont) {
+                Text(
+                    text = languageName,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = statusColor,
+                )
+                VoicePackActionButton(
+                    state = state,
+                    actionTag = actionTag,
+                    onDownload = onDownload,
+                    onCancel = onCancel,
+                    onDelete = onDelete,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = languageName,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = statusColor,
+                            maxLines = if (state is VoiceModelDownloadState.Error) 2 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    VoicePackActionButton(
+                        state = state,
+                        actionTag = actionTag,
+                        onDownload = onDownload,
+                        onCancel = onCancel,
+                        onDelete = onDelete,
+                    )
+                }
+            }
+
             if (state is VoiceModelDownloadState.Downloading) {
                 LinearProgressIndicator(
                     progress = { state.progressPercent / 100f },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                when (state) {
-                    VoiceModelDownloadState.NotDownloaded,
-                    is VoiceModelDownloadState.Error,
-                    -> Button(
-                        onClick = onDownload,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag(actionTag),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.voice_pack_download),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-
-                    is VoiceModelDownloadState.Downloading -> OutlinedButton(
-                        onClick = onCancel,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag(actionTag),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.action_cancel),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-
-                    is VoiceModelDownloadState.Ready -> OutlinedButton(
-                        onClick = onDelete,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag(actionTag),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteOutline,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.voice_pack_delete),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
         }
+    }
+}
+
+@Composable
+private fun VoicePackActionButton(
+    state: VoiceModelDownloadState,
+    actionTag: String,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val icon: ImageVector
+    val labelRes: Int
+    val onClick: () -> Unit
+    when (state) {
+        VoiceModelDownloadState.NotDownloaded,
+        is VoiceModelDownloadState.Error,
+        -> {
+            icon = Icons.Rounded.Download
+            labelRes = R.string.voice_pack_download
+            onClick = onDownload
+        }
+
+        is VoiceModelDownloadState.Downloading -> {
+            icon = Icons.Rounded.Close
+            labelRes = R.string.action_cancel
+            onClick = onCancel
+        }
+
+        is VoiceModelDownloadState.Ready -> {
+            icon = Icons.Rounded.DeleteOutline
+            labelRes = R.string.voice_pack_delete
+            onClick = onDelete
+        }
+    }
+    OutlinedButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .testTag(actionTag),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(labelRes),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

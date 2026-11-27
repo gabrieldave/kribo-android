@@ -471,7 +471,8 @@
     <string name="cd_edit_link">Editar enlace</string>
     <string name="cd_link_done">Listo</string>
     <string name="settings_dictation_title">Dictado por voz</string>
-    <string name="settings_dictation_subtitle">Elige entre el dictado ligero del sistema o streaming 100% offline en tu dispositivo</string>
+    <string name="settings_dictation_engine_header">Motor de dictado</string>
+    <string name="settings_dictation_subtitle">Elige cómo convertir tu voz en texto dentro del editor</string>
     <string name="settings_dictation_badge">Activo</string>
     <string name="guide_topic_export_item_5">Envía una o varias notas a ChatGPT, Gemini o Claude como .txt con un prompt listo</string>
     <string name="reorder_title">Reordenar bloques</string>
@@ -511,32 +512,45 @@
     <string name="dictation_loading">Preparando motor offline…</string>
     <string name="dictation_stop">Detener dictado</string>
     <string name="dictation_permission_title">Permiso de micrófono</string>
-    <string name="dictation_permission_body">Kribo usa el micrófono para convertir tu voz en texto dentro de esta nota (con el dictado nativo de Android o el motor offline opcional Moonshine). Sin servidores de Kribo.</string>
+    <string name="dictation_permission_body">Kribo usa el micrófono para convertir tu voz en texto dentro de esta nota, con el dictado del sistema o el respaldo 100% offline opcional. Sin servidores de Kribo.</string>
     <string name="dictation_permission_allow">Permitir micrófono</string>
     <string name="dictation_permission_denied">Permiso de micrófono denegado. Actívalo en los ajustes del sistema para dictar.</string>
     <string name="dictation_unavailable">El reconocimiento de voz no está disponible en este dispositivo.</string>
     <string name="dictation_no_match">No se detectó voz. Inténtalo de nuevo.</string>
     <string name="dictation_audio_error">No se pudo acceder al micrófono. Revisa si otra app lo está usando.</string>
     <string name="dictation_error">No se pudo completar el dictado por voz. Inténtalo de nuevo.</string>
-    <string name="guide_topic_editor_item_4">Toca el botón de micrófono para dictar con el motor ligero del sistema (0 MB) o activa en Ajustes el dictado 100% offline con Moonshine descargando Español o Inglés bajo demanda.</string>
+    <string name="guide_topic_editor_item_4">Toca el botón de micrófono para dictar directo en el Título o en cualquier bloque; por defecto usa el dictado del sistema y puedes activar el respaldo 100% offline en Ajustes.</string>
 
-    <string name="voice_engine_system_title">Del sistema (0 MB)</string>
-    <string name="voice_engine_system_subtitle">Dictado nativo de Android · sin espacio adicional</string>
-    <string name="voice_engine_offline_title">Offline de alta calidad (Moonshine)</string>
-    <string name="voice_engine_offline_subtitle">Streaming continuo en modo avión (MIT · paquetes bajo demanda)</string>
-    <string name="voice_packs_header">Paquetes de voz offline</string>
+    <string name="guide_topic_voice_title">Dictado por voz</string>
+    <string name="guide_topic_voice_intro">Habla para escribir directo en el Título o en cualquier bloque del editor, sin salir de tu nota.</string>
+    <string name="guide_topic_voice_item_1">Inserta justo donde está tu cursor: Título, H1, H2, párrafos, listas, tareas, citas y secciones ocultas</string>
+    <string name="guide_topic_voice_item_2">Usa por defecto el dictado del sistema (recomendado) para mejor precisión con 0 MB adicionales</string>
+    <string name="guide_topic_voice_item_3">¿Modo avión o celular sin dictado del sistema? Activa el respaldo 100% offline en Ajustes y descarga Español o Inglés cuando lo necesites</string>
+
+    <string name="guide_topic_web_autosync_title">Kribo Web y Autosync</string>
+    <string name="guide_topic_web_autosync_intro">Edita tus notas en Mac o Windows desde kribo.iareal.net/app, offline-first y sin servidores propios.</string>
+    <string name="guide_topic_web_autosync_item_1">Autosync sincroniza tus cambios automáticamente segundos después de editar, respetando «Solo con Wi-Fi»</string>
+    <string name="guide_topic_web_autosync_item_2">Uso offline-first en escritorio: abre kribo.iareal.net/app, instálala como app (PWA) y trabaja incluso sin internet</string>
+    <string name="guide_topic_web_autosync_item_3">Sincronización directa entre tus dispositivos y tu propia carpeta «Mi unidad / Kribo» en Google Drive, sin servidores propios</string>
+    <string name="guide_topic_web_autosync_item_4">Al reabrir la PWA después de cerrar el navegador, basta 1 clic en «Reconectar Drive» para retomar el autosync al instante</string>
+
+    <string name="voice_engine_system_title">Del sistema (Recomendado)</string>
+    <string name="voice_engine_system_subtitle">Mejor precisión · 0 MB adicionales</string>
+    <string name="voice_engine_offline_title">Respaldo 100% offline</string>
+    <string name="voice_engine_offline_subtitle">Para modo avión o teléfonos sin dictado del sistema</string>
+    <string name="voice_packs_header">Paquetes de idioma offline</string>
     <string name="voice_lang_spanish">Español</string>
     <string name="voice_lang_english">Inglés</string>
-    <string name="voice_pack_status_not_downloaded">No descargado (~%1$d MB)</string>
+    <string name="voice_pack_status_not_downloaded">~%1$d MB</string>
     <string name="voice_pack_status_downloading">Descargando %1$d%%</string>
-    <string name="voice_pack_status_ready">Listo offline — %1$d MB</string>
+    <string name="voice_pack_status_ready">Listo · %1$d MB</string>
     <string name="voice_pack_download">Descargar</string>
-    <string name="voice_pack_delete">Eliminar paquete</string>
+    <string name="voice_pack_delete">Eliminar</string>
     <string name="voice_download_error_network">No se pudo descargar. Revisa tu conexión e inténtalo de nuevo.</string>
     <string name="voice_download_error_space">No hay espacio libre suficiente para descargar este paquete de voz.</string>
     <string name="voice_download_error_integrity">Falló la verificación de integridad del archivo. Descárgalo de nuevo.</string>
     <string name="voice_missing_title">Descargar paquete de voz (%1$s)</string>
-    <string name="voice_missing_body">El dictado offline de alta calidad necesita descargar una sola vez el paquete streaming de %1$s (~%2$d MB) en tu teléfono para funcionar incluso en modo avión.</string>
+    <string name="voice_missing_body">El respaldo 100% offline necesita descargar una sola vez el paquete de %1$s (~%2$d MB) en tu teléfono para funcionar incluso en modo avión.</string>
     <string name="voice_missing_download_now">Descargar ahora (~%1$d MB)</string>
     <string name="voice_missing_use_system">Usar dictado del sistema</string>
 </resources>
