@@ -367,6 +367,7 @@ fun NoteEditorScreen(
                     missingVoiceModelLang = resolveVoiceModelLanguage(AppLanguage.current())
                     return@VoiceDictator
                 }
+                viewModel.clearCapturedDictationTarget()
                 val message = when (error) {
                     DictationError.UNAVAILABLE -> dictationUnavailableMessage
                     DictationError.PERMISSION_DENIED -> dictationDeniedMessage
@@ -385,6 +386,7 @@ fun NoteEditorScreen(
 
     val startDictationWithMode: (VoiceEngineMode) -> Unit = { mode ->
         if (!dictator.isAvailableFor(mode)) {
+            viewModel.clearCapturedDictationTarget()
             showDictationFeedback(dictationUnavailableMessage)
         } else {
             dictator.startWithMode(mode, AppLanguage.current())
@@ -397,6 +399,7 @@ fun NoteEditorScreen(
         if (granted) {
             startDictationWithMode(pendingDictationMode)
         } else {
+            viewModel.clearCapturedDictationTarget()
             showDictationFeedback(dictationDeniedMessage)
         }
     }
@@ -404,6 +407,7 @@ fun NoteEditorScreen(
     val requestPermissionAndStart: (VoiceEngineMode) -> Unit = { mode ->
         pendingDictationMode = mode
         if (!dictator.isAvailableFor(mode)) {
+            viewModel.clearCapturedDictationTarget()
             showDictationFeedback(dictationUnavailableMessage)
         } else {
             val granted = ContextCompat.checkSelfPermission(
@@ -421,8 +425,14 @@ fun NoteEditorScreen(
     val onToggleDictation: () -> Unit = {
         when (dictationState) {
             DictationState.LISTENING -> dictator.stop()
-            DictationState.LOADING -> dictator.cancel()
+            DictationState.LOADING -> {
+                viewModel.clearCapturedDictationTarget()
+                dictator.cancel()
+            }
             DictationState.IDLE -> {
+                // Freeze the focused field (Title or exact Block/Toggle sub-field + caret)
+                // at mic-tap time so toolbar interaction or modals never redirect text below.
+                viewModel.captureDictationTarget()
                 if (voiceEngineMode == VoiceEngineMode.OFFLINE_MOONSHINE) {
                     val modelLang = resolveVoiceModelLanguage(AppLanguage.current())
                     if (!container.voiceModelManager.isInstalled(modelLang)) {
@@ -436,6 +446,10 @@ fun NoteEditorScreen(
             }
         }
     }
+    val isDictationTargetLocked =
+        dictationState != DictationState.IDLE ||
+            showMicRationale ||
+            missingVoiceModelLang != null
     val manualPhotoCount = blocks.count { it is AttachmentBlock && it.manual }
     val requestImage: (Uri) -> Unit = { uri ->
         if (ProLimits.canAttachManualPhoto(manualPhotoCount, isPro)) {
@@ -482,6 +496,7 @@ fun NoteEditorScreen(
     }
 
     val exit: () -> Unit = {
+        viewModel.clearCapturedDictationTarget()
         dictator.cancel()
         viewModel.flushAndExit(onBack)
     }
@@ -892,6 +907,18 @@ fun NoteEditorScreen(
                         value = viewModel.noteTitle,
                         fontFamily = noteFontFamily,
                         onValueChange = viewModel::updateNoteTitle,
+                        onFocus = { startSel, endSel ->
+                            keyboardGuard.onFocusChanged()
+                            if (!isDictationTargetLocked) {
+                                viewModel.clearCapturedDictationTarget()
+                            }
+                            viewModel.onTitleFocus(startSel, endSel)
+                        },
+                        onSelectionChange = { startSel, endSel ->
+                            viewModel.onTitleSelection(startSel, endSel)
+                        },
+                        caretOverride = viewModel.titleCaret,
+                        caretSyncToken = viewModel.titleCaretSyncToken,
                         onSubmit = {
                             keyboardGuard.onBlockCreated()
                             viewModel.focusFirstParagraph()
@@ -925,9 +952,15 @@ fun NoteEditorScreen(
                         attachment = (block as? AttachmentBlock)?.attachmentId?.let(attachmentMap::get),
                         highlightQuery = viewModel.highlightQuery,
                         highlightStyle = highlight,
-                        onFocus = {
+                        activeCaret = viewModel.activeCaret,
+                        caretSyncTarget = viewModel.blockCaretSyncTarget,
+                        caretSyncToken = viewModel.blockCaretSyncToken,
+                        onFocus = { field ->
                             keyboardGuard.onFocusChanged()
-                            viewModel.onFocus(block.id)
+                            if (!isDictationTargetLocked) {
+                                viewModel.clearCapturedDictationTarget()
+                            }
+                            viewModel.onFocus(block.id, field)
                         },
                         onFocusRequestHandled = { viewModel.consumeFocusRequest(block.id) },
                         onSelection = { startSel, endSel, field ->
@@ -942,7 +975,14 @@ fun NoteEditorScreen(
                             keyboardGuard.onBlockCreated()
                             viewModel.handleDoubleEnter(id)
                         },
-                        onTextChange = { value -> viewModel.updateBlockText(block.id, value) },
+                        onTextChange = { value ->
+                            val targetField = if (block is ToggleBlock) {
+                                NoteEditorViewModel.BlockField.TOGGLE_CONTENT
+                            } else {
+                                NoteEditorViewModel.BlockField.MAIN
+                            }
+                            viewModel.updateBlockText(block.id, value, targetField)
+                        },
                         onToggleTitleChange = { value -> viewModel.updateToggleTitle(block.id, value) },
                         fontFamily = noteFontFamily,
                         darkTheme = darkTheme,
@@ -1216,7 +1256,10 @@ fun NoteEditorScreen(
 
     if (showMicRationale) {
         AppModal(
-            onDismissRequest = { showMicRationale = false },
+            onDismissRequest = {
+                showMicRationale = false
+                viewModel.clearCapturedDictationTarget()
+            },
             title = stringResource(R.string.dictation_permission_title),
             dismissLabel = stringResource(R.string.action_cancel),
             confirmLabel = stringResource(R.string.dictation_permission_allow),
@@ -1249,7 +1292,10 @@ fun NoteEditorScreen(
             }
         }
         AppModal(
-            onDismissRequest = { missingVoiceModelLang = null },
+            onDismissRequest = {
+                missingVoiceModelLang = null
+                viewModel.clearCapturedDictationTarget()
+            },
             title = stringResource(R.string.voice_missing_title, langLabel),
             dismissLabel = stringResource(R.string.action_close),
         ) {
@@ -2302,7 +2348,10 @@ private fun BlockRow(
     attachment: AttachmentEntity?,
     highlightQuery: String,
     highlightStyle: SpanStyle,
-    onFocus: () -> Unit,
+    activeCaret: com.blackeye.kribo.data.blocks.Caret?,
+    caretSyncTarget: Pair<String, NoteEditorViewModel.BlockField>?,
+    caretSyncToken: Int,
+    onFocus: (NoteEditorViewModel.BlockField) -> Unit,
     onFocusRequestHandled: () -> Unit,
     onSelection: (Int, Int, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField) -> Unit,
     onEnterBelow: () -> Unit,
@@ -2331,12 +2380,19 @@ private fun BlockRow(
     }
     // Enter on a collapsible section title opens it and hands focus to the inner field.
     var toggleContentFocus by remember(block.id) { mutableStateOf(false) }
+    val onFocusMain: () -> Unit = { onFocus(NoteEditorViewModel.BlockField.MAIN) }
+    val onFocusToggleTitle: () -> Unit = { onFocus(NoteEditorViewModel.BlockField.TOGGLE_TITLE) }
+    val onFocusToggleContent: () -> Unit = { onFocus(NoteEditorViewModel.BlockField.TOGGLE_CONTENT) }
     val onSelectionTitle: (Int, Int) -> Unit = { start, end ->
         onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.TOGGLE_TITLE)
     }
     val onSelectionContent: (Int, Int) -> Unit = { start, end ->
         onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.TOGGLE_CONTENT)
     }
+    fun syncTokenFor(field: NoteEditorViewModel.BlockField): Int =
+        if (caretSyncTarget == block.id to field) caretSyncToken else 0
+    fun caretOverrideFor(field: NoteEditorViewModel.BlockField): com.blackeye.kribo.data.blocks.Caret? =
+        if (caretSyncTarget == block.id to field) activeCaret else null
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2371,12 +2427,14 @@ private fun BlockRow(
                                 if (block.level <= 1) R.string.block_heading_placeholder
                                 else R.string.block_subtitle_placeholder,
                             ),
-                            onFocus = onFocus,
+                            onFocus = onFocusMain,
                             requestFocus = focusRequest,
                             onFocusRequestHandled = onFocusRequestHandled,
                             onSelectionChange = { start, end ->
                                 onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.MAIN)
                             },
+                            caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.MAIN),
+                            caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.MAIN),
                             onSubmit = onEnterBelow,
                             spans = block.spans,
                             fontFamily = fontFamily,
@@ -2392,22 +2450,24 @@ private fun BlockRow(
 
                     is ParagraphBlock -> Column(modifier = Modifier.fillMaxWidth()) {
                         BlockTextField(
-                        value = block.text,
-                        onValueChange = onTextChange,
-                        textStyle = MaterialTheme.typography.bodyLarge,
-                        placeholder = stringResource(R.string.block_paragraph_placeholder),
-                        onFocus = onFocus,
-                        requestFocus = focusRequest,
-                        onFocusRequestHandled = onFocusRequestHandled,
-                        onSelectionChange = { start, end ->
+                            value = block.text,
+                            onValueChange = onTextChange,
+                            textStyle = MaterialTheme.typography.bodyLarge,
+                            placeholder = stringResource(R.string.block_paragraph_placeholder),
+                            onFocus = onFocusMain,
+                            requestFocus = focusRequest,
+                            onFocusRequestHandled = onFocusRequestHandled,
+                            onSelectionChange = { start, end ->
                                 onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.MAIN)
                             },
-                        spans = block.spans,
-                        fontFamily = fontFamily,
-                        darkTheme = darkTheme,
-                        highlightQuery = highlightQuery,
-                        highlightStyle = highlightStyle,
-                        modifier = Modifier.padding(vertical = 6.dp),
+                            caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.MAIN),
+                            caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.MAIN),
+                            spans = block.spans,
+                            fontFamily = fontFamily,
+                            darkTheme = darkTheme,
+                            highlightQuery = highlightQuery,
+                            highlightStyle = highlightStyle,
+                            modifier = Modifier.padding(vertical = 6.dp),
                         )
                         UrlChipsRow(text = block.text)
                     }
@@ -2442,12 +2502,14 @@ private fun BlockRow(
                                 if (block.ordered) R.string.block_ordered_list_placeholder
                                 else R.string.block_bullet_list_placeholder,
                             ),
-                            onFocus = onFocus,
+                            onFocus = onFocusMain,
                             requestFocus = focusRequest,
                             onFocusRequestHandled = onFocusRequestHandled,
                             onSelectionChange = { start, end ->
                                 onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.MAIN)
                             },
+                            caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.MAIN),
+                            caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.MAIN),
                             onSubmit = onEnterNextList,
                             singleLine = false,
                             spans = block.spans,
@@ -2478,12 +2540,14 @@ private fun BlockRow(
                             onValueChange = onTextChange,
                             textStyle = MaterialTheme.typography.bodyLarge,
                             placeholder = stringResource(R.string.block_task_placeholder),
-                            onFocus = onFocus,
+                            onFocus = onFocusMain,
                             requestFocus = focusRequest,
                             onFocusRequestHandled = onFocusRequestHandled,
                             onSelectionChange = { start, end ->
                                 onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.MAIN)
                             },
+                            caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.MAIN),
+                            caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.MAIN),
                             onSubmit = onEnterNextTask,
                             spans = block.spans,
                             fontFamily = fontFamily,
@@ -2538,10 +2602,12 @@ private fun BlockRow(
                                 onValueChange = onToggleTitleChange,
                                 textStyle = MaterialTheme.typography.titleMedium,
                                 placeholder = stringResource(R.string.block_toggle_placeholder),
-                                onFocus = onFocus,
+                                onFocus = onFocusToggleTitle,
                                 requestFocus = focusRequest,
                                 onFocusRequestHandled = onFocusRequestHandled,
                                 onSelectionChange = onSelectionTitle,
+                                caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.TOGGLE_TITLE),
+                                caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.TOGGLE_TITLE),
                                 onSubmit = {
                                     // Natural flow: Enter on the title opens the section and
                                     // jumps into its content, keeping the IME alive.
@@ -2572,10 +2638,12 @@ private fun BlockRow(
                                 },
                                 textStyle = MaterialTheme.typography.bodyMedium,
                                 placeholder = stringResource(R.string.block_toggle_content_placeholder),
-                                onFocus = onFocus,
+                                onFocus = onFocusToggleContent,
                                 requestFocus = toggleContentFocus,
                                 onFocusRequestHandled = { toggleContentFocus = false },
                                 onSelectionChange = onSelectionContent,
+                                caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.TOGGLE_CONTENT),
+                                caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.TOGGLE_CONTENT),
                                 spans = block.contentSpans,
                                 fontFamily = fontFamily,
                                 darkTheme = darkTheme,
@@ -2621,12 +2689,14 @@ private fun BlockRow(
                                 fontStyle = FontStyle.Italic,
                             ),
                             placeholder = stringResource(R.string.block_quote_placeholder),
-                            onFocus = onFocus,
+                            onFocus = onFocusMain,
                             requestFocus = focusRequest,
                             onFocusRequestHandled = onFocusRequestHandled,
                             onSelectionChange = { start, end ->
                                 onSelection(start, end, com.blackeye.kribo.ui.note.NoteEditorViewModel.BlockField.MAIN)
                             },
+                            caretOverride = caretOverrideFor(NoteEditorViewModel.BlockField.MAIN),
+                            caretSyncToken = syncTokenFor(NoteEditorViewModel.BlockField.MAIN),
                             spans = block.spans,
                             fontFamily = fontFamily,
                             darkTheme = darkTheme,
@@ -2675,15 +2745,65 @@ private fun BlockRow(
 private fun NoteTitleField(
     value: String,
     onValueChange: (String) -> Unit,
+    onFocus: (Int, Int) -> Unit,
+    onSelectionChange: (Int, Int) -> Unit,
     onSubmit: () -> Unit,
+    caretOverride: com.blackeye.kribo.data.blocks.Caret? = null,
+    caretSyncToken: Int = 0,
     fontFamily: FontFamily? = null,
 ) {
+    var fieldValue by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    var isFocused by remember { mutableStateOf(false) }
+    var lastSyncToken by remember { mutableStateOf(caretSyncToken) }
+
+    LaunchedEffect(value, caretSyncToken) {
+        val forcedSync = caretSyncToken > 0 && caretSyncToken != lastSyncToken
+        if (forcedSync) lastSyncToken = caretSyncToken
+        if (fieldValue.text != value || forcedSync) {
+            val targetRange = if (forcedSync && caretOverride != null) {
+                val start = caretOverride.start.coerceIn(0, value.length)
+                val end = caretOverride.end.coerceIn(start, value.length)
+                TextRange(start, end)
+            } else {
+                val wasAtEnd = fieldValue.selection.collapsed &&
+                    fieldValue.selection.start == fieldValue.text.length
+                val cursor = if (wasAtEnd && value.startsWith(fieldValue.text)) {
+                    value.length
+                } else {
+                    fieldValue.selection.start.coerceIn(0, value.length)
+                }
+                TextRange(cursor)
+            }
+            fieldValue = TextFieldValue(value, targetRange)
+        }
+    }
+
+    LaunchedEffect(fieldValue.selection, isFocused) {
+        if (isFocused) {
+            onSelectionChange(fieldValue.selection.start, fieldValue.selection.end)
+        }
+    }
+
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
+        value = fieldValue,
+        onValueChange = { updated ->
+            fieldValue = updated
+            if (isFocused) {
+                onSelectionChange(updated.selection.start, updated.selection.end)
+            }
+            onValueChange(updated.text)
+        },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp)
+            .onFocusChanged { state ->
+                isFocused = state.isFocused
+                if (state.isFocused) {
+                    onFocus(fieldValue.selection.start, fieldValue.selection.end)
+                }
+            }
             .testTag("editor-title-field"),
         textStyle = MaterialTheme.typography.headlineSmall.copy(
             fontWeight = FontWeight.SemiBold,
@@ -2697,7 +2817,7 @@ private fun NoteTitleField(
         keyboardActions = KeyboardActions(onNext = { onSubmit() }),
         decorationBox = { inner ->
             Box {
-                if (value.isEmpty()) {
+                if (fieldValue.text.isEmpty()) {
                     Text(
                         text = stringResource(R.string.block_title_placeholder),
                         style = MaterialTheme.typography.headlineSmall.copy(
@@ -2794,6 +2914,8 @@ private fun BlockTextField(
     requestFocus: Boolean = false,
     onFocusRequestHandled: () -> Unit = {},
     onSelectionChange: (Int, Int) -> Unit = { _, _ -> Unit },
+    caretOverride: com.blackeye.kribo.data.blocks.Caret? = null,
+    caretSyncToken: Int = 0,
     onSubmit: (() -> Unit)? = null,
     interceptNewline: ((String) -> Unit)? = null,
     singleLine: Boolean = onSubmit != null,
@@ -2815,6 +2937,8 @@ private fun BlockTextField(
     var fieldValue by remember {
         mutableStateOf(TextFieldValue(value, TextRange(value.length)))
     }
+    var isFocused by remember { mutableStateOf(false) }
+    var lastSyncToken by remember { mutableStateOf(caretSyncToken) }
     var cursorRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
     // A newly inserted block (Enter / toolbar) must keep the IME up: request focus and show the
@@ -2836,26 +2960,38 @@ private fun BlockTextField(
         // Not composed yet (long note): the view-model keeps the request until the block appears.
     }
 
-    LaunchedEffect(value) {
-        if (fieldValue.text != value) {
-            val wasAtEnd = fieldValue.selection.collapsed &&
-                fieldValue.selection.start == fieldValue.text.length
-            val cursor = if (wasAtEnd && value.startsWith(fieldValue.text)) {
-                value.length
+    LaunchedEffect(value, caretSyncToken) {
+        val forcedSync = caretSyncToken > 0 && caretSyncToken != lastSyncToken
+        if (forcedSync) lastSyncToken = caretSyncToken
+        if (fieldValue.text != value || forcedSync) {
+            val targetRange = if (forcedSync && caretOverride != null) {
+                val start = caretOverride.start.coerceIn(0, value.length)
+                val end = caretOverride.end.coerceIn(start, value.length)
+                TextRange(start, end)
             } else {
-                fieldValue.selection.start.coerceIn(0, value.length)
+                val wasAtEnd = fieldValue.selection.collapsed &&
+                    fieldValue.selection.start == fieldValue.text.length
+                val cursor = if (wasAtEnd && value.startsWith(fieldValue.text)) {
+                    value.length
+                } else {
+                    fieldValue.selection.start.coerceIn(0, value.length)
+                }
+                TextRange(cursor)
             }
-            fieldValue = TextFieldValue(value, TextRange(cursor))
+            fieldValue = TextFieldValue(value, targetRange)
         }
     }
-    // The toolbar reads the caret from this signal: it survives button taps because the
-    // buttons never take text focus away, and it is also reported on focus/tap.
-    LaunchedEffect(fieldValue.selection) {
-        onSelectionChange(fieldValue.selection.start, fieldValue.selection.end)
+    // Only report caret updates while this field owns focus so unfocused LazyColumn items never
+    // hijack the active dictation/formatting target from the Title or another focused block.
+    LaunchedEffect(fieldValue.selection, isFocused) {
+        if (isFocused) {
+            onSelectionChange(fieldValue.selection.start, fieldValue.selection.end)
+        }
     }
-    // After every keystroke/Enter the cursor rect is already valid: keep it above the IME and
-    // below the formatting toolbar, even in very long notes.
-    LaunchedEffect(fieldValue.text, fieldValue.selection) {
+    // After every keystroke/Enter inside the focused field, keep its cursor above the IME and
+    // below the formatting toolbar, without letting unfocused blocks pull scroll down.
+    LaunchedEffect(fieldValue.text, fieldValue.selection, isFocused) {
+        if (!isFocused) return@LaunchedEffect
         withFrameNanos { }
         cursorRect?.let { rect -> runCatching { requester.bringIntoView(rect) } }
     }
@@ -2867,6 +3003,9 @@ private fun BlockTextField(
                 interceptNewline(updated.text)
             } else {
                 fieldValue = updated
+                if (isFocused) {
+                    onSelectionChange(updated.selection.start, updated.selection.end)
+                }
                 onValueChange(updated.text)
             }
         },
@@ -2874,7 +3013,13 @@ private fun BlockTextField(
             .fillMaxWidth()
             .bringIntoViewRequester(requester)
             .focusRequester(focusRequester)
-            .onFocusChanged { state -> if (state.isFocused) onFocus() }
+            .onFocusChanged { state ->
+                isFocused = state.isFocused
+                if (state.isFocused) {
+                    onFocus()
+                    onSelectionChange(fieldValue.selection.start, fieldValue.selection.end)
+                }
+            }
             .testTag("editor-block-field"),
         textStyle = textStyle.copy(
             color = MaterialTheme.colorScheme.onSurface,

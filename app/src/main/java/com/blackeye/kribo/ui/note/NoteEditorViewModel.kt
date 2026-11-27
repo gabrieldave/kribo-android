@@ -31,6 +31,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Unified destination for voice dictation (#44): note title or a specific editable block field. */
+sealed interface DictationTarget {
+    val caret: Caret?
+
+    data class Title(override val caret: Caret? = null) : DictationTarget
+
+    data class Block(
+        val blockId: String,
+        val isToggleTitle: Boolean = false,
+        override val caret: Caret? = null,
+    ) : DictationTarget
+}
+
 class NoteEditorViewModel(
     private val repository: NoteRepository,
     private val attachmentStore: AttachmentStore,
@@ -75,6 +88,31 @@ class NoteEditorViewModel(
     /** Last known caret/selection inside [focusedBlockId]; survives toolbar taps. */
     var activeCaret by mutableStateOf<Caret?>(null)
         private set
+
+    /** True while the note title field owns focus (never redirected to body blocks). */
+    var isTitleFocused by mutableStateOf(false)
+        private set
+
+    /** Last known caret/selection inside [noteTitle]; survives toolbar taps. */
+    var titleCaret by mutableStateOf<Caret?>(null)
+        private set
+
+    /** Monotonic signal to move [NoteTitleField]'s cursor after programmatic dictation/undo. */
+    var titleCaretSyncToken by mutableStateOf(0)
+        private set
+
+    /** Monotonic signal + target pair to move the matching [BlockTextField]'s cursor after dictation. */
+    var blockCaretSyncToken by mutableStateOf(0)
+        private set
+
+    var blockCaretSyncTarget by mutableStateOf<Pair<String, BlockField>?>(null)
+        private set
+
+    /** Frozen dictation target captured on toolbar-mic press so taps/modals never redirect text. */
+    var capturedDictationTarget by mutableStateOf<DictationTarget?>(null)
+        private set
+
+    private var hasActiveDictationCapture = false
 
     /** Anchor captured when the photo chooser opens; the image lands at the caret after picking. */
     private var pendingImageAnchor: PendingImageAnchor? = null
@@ -144,20 +182,83 @@ class NoteEditorViewModel(
         if (focusRequestId == blockId) focusRequestId = null
     }
 
-    fun onFocus(blockId: String) {
-        if (focusedBlockId != blockId) {
+    fun onTitleFocus(start: Int = noteTitle.length, end: Int = start) {
+        val clampedStart = start.coerceIn(0, noteTitle.length)
+        val clampedEnd = end.coerceIn(clampedStart, noteTitle.length)
+        isTitleFocused = true
+        focusedBlockId = null
+        focusRequestId = null
+        activeCaret = null
+        titleCaret = Caret(clampedStart, clampedEnd)
+    }
+
+    fun onTitleSelection(start: Int, end: Int) {
+        val clampedStart = start.coerceIn(0, noteTitle.length)
+        val clampedEnd = end.coerceIn(clampedStart, noteTitle.length)
+        isTitleFocused = true
+        focusedBlockId = null
+        titleCaret = Caret(clampedStart, clampedEnd)
+    }
+
+    fun onFocus(blockId: String, field: BlockField? = null) {
+        isTitleFocused = false
+        if (focusRequestId != blockId) focusRequestId = null
+        val block = blocks.firstOrNull { it.id == blockId }
+        val resolvedField = field ?: when {
+            block is com.blackeye.kribo.data.blocks.ToggleBlock &&
+                focusedBlockId == blockId &&
+                activeField == BlockField.TOGGLE_CONTENT -> BlockField.TOGGLE_CONTENT
+            block is com.blackeye.kribo.data.blocks.ToggleBlock -> BlockField.TOGGLE_TITLE
+            else -> BlockField.MAIN
+        }
+        if (focusedBlockId != blockId || activeField != resolvedField) {
             focusedBlockId = blockId
+            activeField = resolvedField
             activeCaret = null
         }
     }
 
     /** Remembers where the caret/selection is inside the active block (toolbar never clears it). */
     fun onSelection(blockId: String, start: Int, end: Int, field: BlockField = BlockField.MAIN) {
+        isTitleFocused = false
         if (focusedBlockId != blockId) focusedBlockId = blockId
         activeCaret = Caret(start, end)
         activeField = field
         val block = blocks.firstOrNull { it.id == blockId }
         activeTypingStyles = SpanEditor.activeStylesAt(spansOfBlock(block, field), start, end)
+    }
+
+    /** Resolves the live editable target (note title or focused text block field). */
+    fun currentDictationTarget(): DictationTarget? {
+        if (isTitleFocused) {
+            return DictationTarget.Title(caret = titleCaret)
+        }
+        val blockId = focusedBlockId ?: return null
+        val block = blocks.firstOrNull { it.id == blockId } ?: return null
+        if (!isEditableTextBlock(block)) return null
+        val isToggleTitle = block is com.blackeye.kribo.data.blocks.ToggleBlock &&
+            activeField != BlockField.TOGGLE_CONTENT
+        return DictationTarget.Block(
+            blockId = block.id,
+            isToggleTitle = isToggleTitle,
+            caret = activeCaret,
+        )
+    }
+
+    /**
+     * Freezes the current [DictationTarget] when the user taps `toolbar-mic` so subsequent focus
+     * shifts or modals never redirect dictation away from the active field (e.g. Title -> body).
+     */
+    fun captureDictationTarget(): DictationTarget? {
+        val target = currentDictationTarget()
+        hasActiveDictationCapture = true
+        capturedDictationTarget = target
+        return target
+    }
+
+    fun clearCapturedDictationTarget() {
+        hasActiveDictationCapture = false
+        capturedDictationTarget = null
     }
 
     /** Which sub-field of the active block holds the caret (toggle title vs content). */
@@ -447,59 +548,147 @@ class NoteEditorViewModel(
     }
 
     /**
-     * Native voice dictation (#44): inserts [spoken] at the caret of the focused editable block
-     * (with clean spacing and preserved inline spans), or creates/reuses a paragraph block when
-     * no editable block had focus. Records one Undo step and triggers save + Drive auto-sync.
+     * Native/offline voice dictation (#44): inserts [spoken] at the exact caret of the captured
+     * (or currently focused) [DictationTarget] — either the note Title or any editable text block
+     * (H1/H2, Paragraph, ordered/bullet List, Task, Quote, Toggle title or Toggle content) — without
+     * changing focus or scrolling away. Falls back to a ParagraphBlock ONLY when no field or block
+     * had focus prior to dictation. Records one Undo step and triggers immediate save + Drive sync.
      */
     fun insertDictatedText(spoken: String) {
         val clean = spoken.trim()
         if (clean.isEmpty()) return
 
-        val focused = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
-        if (focused != null && isEditableTextBlock(focused)) {
-            recordHistory()
-            val oldText = textOfBlock(focused, activeField)
-            val caret = activeCaret
-            val start = (caret?.start ?: oldText.length).coerceIn(0, oldText.length)
-            val end = (caret?.end ?: oldText.length).coerceIn(start, oldText.length)
-            val prefix = oldText.substring(0, start)
-            val suffix = oldText.substring(end)
-            val spaceBefore = if (prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
-            val spaceAfter = if (suffix.isNotEmpty() && !suffix.first().isWhitespace()) " " else ""
-            val inserted = spaceBefore + clean + spaceAfter
-            val newText = prefix + inserted + suffix
-            val adjusted = SpanEditor.adjustSpansOnEdit(
-                oldText = oldText,
-                newText = newText,
-                spans = spansOfBlock(focused, activeField),
-                active = activeTypingStyles,
-            )
-            blocks = blocks.map { current ->
-                if (current.id != focused.id) {
-                    current
-                } else {
-                    replaceTextSpans(current, newText, adjusted, activeField)
-                }
-            }
-            val newPos = prefix.length + spaceBefore.length + clean.length
-            activeCaret = Caret(newPos, newPos)
-            scheduleSave(immediate = true)
-            return
+        val target = if (hasActiveDictationCapture) {
+            capturedDictationTarget
+        } else {
+            currentDictationTarget()
         }
 
+        when (target) {
+            is DictationTarget.Title -> {
+                val cleanTitle = clean
+                    .replace(Regex("[\\r\\n]+"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                if (cleanTitle.isEmpty()) return
+                recordHistory()
+                val oldTitle = noteTitle
+                val caret = target.caret ?: titleCaret
+                val start = (caret?.start ?: oldTitle.length).coerceIn(0, oldTitle.length)
+                val end = (caret?.end ?: oldTitle.length).coerceIn(start, oldTitle.length)
+                val prefix = oldTitle.substring(0, start)
+                val suffix = oldTitle.substring(end)
+                val spaceBefore = if (prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
+                val spaceAfter = if (suffix.isNotEmpty() && !suffix.first().isWhitespace()) " " else ""
+                val inserted = spaceBefore + cleanTitle + spaceAfter
+                val combined = (prefix + inserted + suffix).take(TITLE_MAX_LENGTH)
+                noteTitle = combined
+                syncDuplicateTitleBlock(oldTitle, combined)
+                val newPos = (prefix.length + spaceBefore.length + cleanTitle.length)
+                    .coerceIn(0, combined.length)
+                val updatedCaret = Caret(newPos, newPos)
+                isTitleFocused = true
+                focusedBlockId = null
+                titleCaret = updatedCaret
+                titleCaretSyncToken += 1
+                if (hasActiveDictationCapture) {
+                    capturedDictationTarget = DictationTarget.Title(caret = updatedCaret)
+                }
+                scheduleSave(immediate = true)
+                return
+            }
+
+            is DictationTarget.Block -> {
+                val block = blocks.firstOrNull { it.id == target.blockId }
+                if (block != null && isEditableTextBlock(block)) {
+                    val targetField = when {
+                        block !is com.blackeye.kribo.data.blocks.ToggleBlock -> BlockField.MAIN
+                        target.isToggleTitle -> BlockField.TOGGLE_TITLE
+                        else -> BlockField.TOGGLE_CONTENT
+                    }
+                    val singleLineTarget = block is com.blackeye.kribo.data.blocks.TitleBlock ||
+                        (block is com.blackeye.kribo.data.blocks.ToggleBlock && targetField == BlockField.TOGGLE_TITLE)
+                    val textToInsert = if (singleLineTarget) {
+                        clean.replace(Regex("[\\r\\n]+"), " ").replace(Regex("\\s+"), " ").trim()
+                    } else {
+                        clean
+                    }
+                    if (textToInsert.isEmpty()) return
+                    recordHistory()
+                    val oldText = textOfBlock(block, targetField)
+                    val caret = target.caret ?: activeCaret
+                    val start = (caret?.start ?: oldText.length).coerceIn(0, oldText.length)
+                    val end = (caret?.end ?: oldText.length).coerceIn(start, oldText.length)
+                    val prefix = oldText.substring(0, start)
+                    val suffix = oldText.substring(end)
+                    val spaceBefore = if (prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
+                    val spaceAfter = if (suffix.isNotEmpty() && !suffix.first().isWhitespace()) " " else ""
+                    val inserted = spaceBefore + textToInsert + spaceAfter
+                    val newText = prefix + inserted + suffix
+                    val adjusted = SpanEditor.adjustSpansOnEdit(
+                        oldText = oldText,
+                        newText = newText,
+                        spans = spansOfBlock(block, targetField),
+                        active = activeTypingStyles,
+                    )
+                    blocks = blocks.map { current ->
+                        if (current.id != block.id) {
+                            current
+                        } else {
+                            replaceTextSpans(current, newText, adjusted, targetField)
+                        }
+                    }
+                    val newPos = prefix.length + spaceBefore.length + textToInsert.length
+                    val updatedCaret = Caret(newPos, newPos)
+                    isTitleFocused = false
+                    focusedBlockId = block.id
+                    activeField = targetField
+                    activeCaret = updatedCaret
+                    blockCaretSyncTarget = block.id to targetField
+                    blockCaretSyncToken += 1
+                    if (hasActiveDictationCapture) {
+                        capturedDictationTarget = DictationTarget.Block(
+                            blockId = block.id,
+                            isToggleTitle = block is com.blackeye.kribo.data.blocks.ToggleBlock &&
+                                targetField == BlockField.TOGGLE_TITLE,
+                            caret = updatedCaret,
+                        )
+                    }
+                    scheduleSave(immediate = true)
+                    return
+                }
+            }
+
+            null -> Unit
+        }
+
+        // Fallback ONLY when literally no field or editable block had focus prior to dictation.
         recordHistory()
         val trailing = blocks.lastOrNull()
+        val targetBlockId: String
         if (trailing is ParagraphBlock && trailing.text.isBlank()) {
             blocks = blocks.dropLast(1) + trailing.copy(text = clean)
+            targetBlockId = trailing.id
+            isTitleFocused = false
             focusedBlockId = trailing.id
             activeField = BlockField.MAIN
-            activeCaret = Caret(clean.length, clean.length)
         } else {
             val paragraph = ParagraphBlock(text = clean)
             blocks = blocks + paragraph
+            targetBlockId = paragraph.id
             adoptFocus(paragraph.id)
             activeField = BlockField.MAIN
-            activeCaret = Caret(clean.length, clean.length)
+        }
+        val updatedCaret = Caret(clean.length, clean.length)
+        activeCaret = updatedCaret
+        blockCaretSyncTarget = targetBlockId to BlockField.MAIN
+        blockCaretSyncToken += 1
+        if (hasActiveDictationCapture) {
+            capturedDictationTarget = DictationTarget.Block(
+                blockId = targetBlockId,
+                isToggleTitle = false,
+                caret = updatedCaret,
+            )
         }
         scheduleSave(immediate = true)
     }
@@ -544,9 +733,15 @@ class NoteEditorViewModel(
     }
 
     private fun adoptFocus(blockId: String) {
+        isTitleFocused = false
         focusedBlockId = blockId
         focusRequestId = blockId
         createdBlockId = blockId
+        activeField = if (blocks.firstOrNull { it.id == blockId } is com.blackeye.kribo.data.blocks.ToggleBlock) {
+            BlockField.TOGGLE_TITLE
+        } else {
+            BlockField.MAIN
+        }
         activeCaret = null
     }
 
@@ -588,9 +783,12 @@ class NoteEditorViewModel(
 
     /** Clears text focus before the compact reorder list replaces the editor fields. */
     fun prepareForReorder() {
+        isTitleFocused = false
         focusedBlockId = null
         focusRequestId = null
         activeCaret = null
+        titleCaret = null
+        clearCapturedDictationTarget()
     }
 
     private var dragStartSnapshot: Snapshot? = null
@@ -652,9 +850,12 @@ class NoteEditorViewModel(
         if (updated === blocks || updated == blocks) return
         recordHistory()
         blocks = updated
+        isTitleFocused = false
         focusedBlockId = null
         focusRequestId = null
         activeCaret = null
+        titleCaret = null
+        clearCapturedDictationTarget()
         scheduleSave(immediate = true)
     }
 
@@ -663,6 +864,9 @@ class NoteEditorViewModel(
         val target = blocks.firstOrNull { it.id == blockId }
         blocks = blocks.filterNot { it.id == blockId }
         if (focusedBlockId == blockId) focusedBlockId = null
+        if ((capturedDictationTarget as? DictationTarget.Block)?.blockId == blockId) {
+            clearCapturedDictationTarget()
+        }
         scheduleSave(immediate = true)
 
         if (target is AttachmentBlock && target.attachmentId != null) {
@@ -776,6 +980,12 @@ class NoteEditorViewModel(
         focusedBlockId = null
         focusRequestId = null
         activeCaret = null
+        clearCapturedDictationTarget()
+        if (isTitleFocused) {
+            val end = noteTitle.length
+            titleCaret = Caret(end, end)
+            titleCaretSyncToken += 1
+        }
         coalesceKey = null
         refreshHistoryFlags()
         scheduleSave(immediate = true)
@@ -789,6 +999,12 @@ class NoteEditorViewModel(
         focusedBlockId = null
         focusRequestId = null
         activeCaret = null
+        clearCapturedDictationTarget()
+        if (isTitleFocused) {
+            val end = noteTitle.length
+            titleCaret = Caret(end, end)
+            titleCaretSyncToken += 1
+        }
         coalesceKey = null
         refreshHistoryFlags()
         scheduleSave(immediate = true)
